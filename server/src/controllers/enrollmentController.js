@@ -2,367 +2,285 @@ import Enrollment from "../models/Enrollment.js";
 import Batch from "../models/Batch.js";
 import User from "../models/User.js";
 import AppError from "../utils/AppError.js";
+import escapeRegex from "../utils/escapeRegex.js";
+
+const STUDENT_FIELDS = "name email phone avatar";
+const BATCH_FIELDS = "name subject schedule fee status capacity teacher";
+
+const populateEnrollment = (query) =>
+  query.populate("student", STUDENT_FIELDS).populate("batch", BATCH_FIELDS);
+
+const activeSeatCount = (batchId) => Enrollment.countDocuments({ batch: batchId, isActive: true });
+
+const capacityError = (batch) =>
+  new AppError(`"${batch.name}" is full (${batch.capacity}/${batch.capacity} seats).`, 409);
 
 /**
- * Enroll a student into a batch with server-side hard capacity enforcement.
+ * Capacity guard used by every path that makes an enrollment active.
+ *
+ * Pre-check: reject if the batch is already full.
+ * Post-check: after the write, recount. If two admins enrolled into the last
+ * seat at the same moment, the count is now over capacity and this request
+ * undoes its own write. Worst case under a race is a rejected request —
+ * never an overfilled batch.
  */
+const assertSeatAvailable = async (batch) => {
+  if ((await activeSeatCount(batch._id)) >= batch.capacity) throw capacityError(batch);
+};
+
+const confirmSeatOrRollback = async (batch, rollback) => {
+  if ((await activeSeatCount(batch._id)) > batch.capacity) {
+    await rollback();
+    throw capacityError(batch);
+  }
+};
+
+const assertEnrollableBatch = (batch) => {
+  if (!batch) throw new AppError("Batch not found.", 404);
+  if (batch.status === "archived") {
+    throw new AppError("Archived batches can't take new enrollments.", 400);
+  }
+};
+
+// POST /enrollments (admin)
 export const enrollStudent = async (req, res, next) => {
   try {
-    const { student, batch: batchId, paymentStatus } = req.body;
+    const { student: studentId, batch: batchId, paymentStatus } = req.body;
 
-    // 1. Verify student exists and has 'student' role
-    const studentUser = await User.findById(student);
-    if (!studentUser) {
-      return next(new AppError("Candidate student account not found.", 404));
+    const student = await User.findById(studentId);
+    if (!student) return next(new AppError("Student not found.", 404));
+    if (student.role !== "student") {
+      return next(new AppError("Only student accounts can be enrolled.", 400));
     }
-    if (studentUser.role !== "student") {
-      return next(
-        new AppError("Only accounts with the 'student' role can be enrolled in cohorts.", 400)
-      );
-    }
-    if (!studentUser.isActive) {
-      return next(
-        new AppError("Cannot enroll a deactivated candidate account.", 400)
-      );
+    if (!student.isActive) {
+      return next(new AppError("This student's account is deactivated.", 400));
     }
 
-    // 2. Verify batch exists and is open for enrollment
     const batch = await Batch.findById(batchId);
-    if (!batch) {
-      return next(new AppError("Cohort batch not found.", 404));
+    assertEnrollableBatch(batch);
+
+    const existing = await Enrollment.findOne({ student: student._id, batch: batch._id });
+    if (existing?.isActive) {
+      return next(new AppError(`${student.name} is already enrolled in this batch.`, 409));
     }
-    if (batch.isArchived || batch.status === "archived") {
-      return next(
-        new AppError("Cannot enroll candidates into an archived cohort.", 400)
+
+    await assertSeatAvailable(batch);
+
+    let enrollment;
+    let statusCode = 201;
+
+    if (existing) {
+      // Previously dropped — reactivate the same record so history is kept
+      const previous = { enrolledAt: existing.enrolledAt, paymentStatus: existing.paymentStatus };
+      existing.isActive = true;
+      existing.enrolledAt = new Date();
+      existing.paymentStatus = paymentStatus;
+      await existing.save();
+      await confirmSeatOrRollback(batch, () =>
+        Enrollment.updateOne({ _id: existing._id }, { isActive: false, ...previous })
       );
+      enrollment = existing;
+      statusCode = 200;
+    } else {
+      enrollment = await Enrollment.create({
+        student: student._id,
+        batch: batch._id,
+        paymentStatus,
+      });
+      await confirmSeatOrRollback(batch, () => Enrollment.deleteOne({ _id: enrollment._id }));
     }
 
-    // 3. Check for existing enrollment record
-    const existingEnrollment = await Enrollment.findOne({
-      student: studentUser._id,
-      batch: batch._id,
-    });
+    const populated = await populateEnrollment(Enrollment.findById(enrollment._id));
 
-    if (existingEnrollment) {
-      if (existingEnrollment.isActive) {
-        return next(
-          new AppError(
-            `Candidate "${studentUser.name}" is already actively enrolled in this cohort.`,
-            400
-          )
-        );
-      } else {
-        // Reactivate soft-dropped enrollment if capacity permits
-        const activeCount = await Enrollment.countDocuments({
-          batch: batch._id,
-          isActive: true,
-        });
-
-        if (activeCount >= batch.capacity) {
-          return next(
-            new AppError(
-              `Capacity reached: "${batch.name}" has reached its maximum quota of ${batch.capacity} candidates.`,
-              400
-            )
-          );
-        }
-
-        existingEnrollment.isActive = true;
-        existingEnrollment.enrolledAt = new Date();
-        if (paymentStatus) {
-          existingEnrollment.paymentStatus = paymentStatus;
-        }
-        await existingEnrollment.save();
-
-        const reactivated = await Enrollment.findById(existingEnrollment._id)
-          .populate("student", "name email phone avatar")
-          .populate("batch", "name subject schedule fee venue");
-
-        return res.status(200).json({
-          success: true,
-          message: `Reactivated enrollment for candidate "${studentUser.name}".`,
-          data: {
-            enrollment: reactivated,
-          },
-        });
-      }
-    }
-
-    // 4. Hard Capacity Enforcement Check
-    const activeCount = await Enrollment.countDocuments({
-      batch: batch._id,
-      isActive: true,
-    });
-
-    if (activeCount >= batch.capacity) {
-      return next(
-        new AppError(
-          `Capacity reached: "${batch.name}" has reached its maximum quota of ${batch.capacity} candidates.`,
-          400
-        )
-      );
-    }
-
-    // 5. Create new enrollment
-    const newEnrollment = await Enrollment.create({
-      student: studentUser._id,
-      batch: batch._id,
-      paymentStatus: paymentStatus || "pending",
-      enrolledAt: new Date(),
-      isActive: true,
-    });
-
-    const populatedEnrollment = await Enrollment.findById(newEnrollment._id)
-      .populate("student", "name email phone avatar")
-      .populate("batch", "name subject schedule fee venue");
-
-    res.status(201).json({
+    res.status(statusCode).json({
       success: true,
-      message: `Candidate "${studentUser.name}" enrolled successfully into "${batch.name}".`,
-      data: {
-        enrollment: populatedEnrollment,
-      },
+      data: { enrollment: populated },
+      message: `${student.name} enrolled in ${batch.name}.`,
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get logged-in candidate's own active enrollments.
- */
+// GET /enrollments/my (student)
 export const getMyEnrollments = async (req, res, next) => {
   try {
-    const enrollments = await Enrollment.find({
-      student: req.user._id,
-      isActive: true,
-    })
+    const enrollments = await Enrollment.find({ student: req.user._id, isActive: true })
       .populate({
         path: "batch",
-        populate: {
-          path: "teacher",
-          select: "name email phone avatar",
-        },
+        select: "-createdBy -__v",
+        populate: { path: "teacher", select: "name email" },
       })
       .sort({ enrolledAt: -1 });
 
-    res.status(200).json({
-      success: true,
-      message: "Candidate enrollments retrieved.",
-      data: {
-        enrollments,
-      },
-    });
+    res.status(200).json({ success: true, data: { enrollments }, message: "Enrollments retrieved." });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get full candidate roster for a specific batch (Admin or assigned Teacher).
- */
+// GET /enrollments/batch/:batchId (admin, or the batch's own teacher)
 export const getBatchRoster = async (req, res, next) => {
   try {
-    const { batchId } = req.params;
+    const batch = await Batch.findById(req.params.batchId).populate("teacher", "name email");
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
-    const batch = await Batch.findById(batchId).populate("teacher", "name email");
-    if (!batch) {
-      return next(new AppError("Cohort batch not found.", 404));
-    }
-
-    // Permission check: only Admin or assigned Teacher can inspect the full cohort roster
-    if (req.user.role === "student") {
-      return next(
-        new AppError(
-          "Forbidden: Candidates are not permitted to access administrative rosters.",
-          403
-        )
-      );
-    }
-
-    // Permission check for teachers: must be assigned to this batch
     if (
       req.user.role === "teacher" &&
-      batch.teacher?._id?.toString() !== req.user._id.toString()
+      batch.teacher?._id.toString() !== req.user._id.toString()
     ) {
-      return next(
-        new AppError(
-          "Forbidden: You can only inspect rosters for cohorts assigned under your charge.",
-          403
-        )
-      );
+      return next(new AppError("You can only view rosters for your own batches.", 403));
     }
 
-    const roster = await Enrollment.find({
-      batch: batch._id,
-      isActive: true,
-    })
-      .populate("student", "name email phone avatar")
+    const roster = await Enrollment.find({ batch: batch._id, isActive: true })
+      .populate("student", STUDENT_FIELDS)
       .sort({ enrolledAt: 1 });
 
-    const counts = {
-      enrolled: roster.length,
-      capacity: batch.capacity,
-      seatsRemaining: Math.max(0, batch.capacity - roster.length),
-      paid: roster.filter((e) => e.paymentStatus === "paid").length,
-      pending: roster.filter((e) => e.paymentStatus === "pending").length,
-      waived: roster.filter((e) => e.paymentStatus === "waived").length,
-    };
+    const count = (status) => roster.filter((e) => e.paymentStatus === status).length;
 
     res.status(200).json({
       success: true,
-      message: `Roster for ${batch.name} retrieved.`,
       data: {
         batch,
         roster,
-        counts,
+        counts: {
+          enrolled: roster.length,
+          capacity: batch.capacity,
+          seatsRemaining: Math.max(0, batch.capacity - roster.length),
+          paid: count("paid"),
+          pending: count("pending"),
+          waived: count("waived"),
+        },
       },
+      message: "Roster retrieved.",
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get all enrollments across system (Admin only, with filters).
- */
+// GET /enrollments (admin) — filter by batch, paymentStatus, search (student name/email)
 export const getAllEnrollments = async (req, res, next) => {
   try {
     const { batch, paymentStatus, search } = req.query;
     const query = { isActive: true };
 
-    if (batch && batch !== "all") {
-      query.batch = batch;
+    if (batch && batch !== "all") query.batch = batch;
+    if (paymentStatus && paymentStatus !== "all") query.paymentStatus = paymentStatus;
+
+    if (search?.trim()) {
+      const pattern = new RegExp(escapeRegex(search.trim()), "i");
+      const studentIds = await User.find({
+        role: "student",
+        $or: [{ name: pattern }, { email: pattern }],
+      }).distinct("_id");
+      query.student = { $in: studentIds };
     }
 
-    if (paymentStatus && paymentStatus !== "all") {
-      query.paymentStatus = paymentStatus;
-    }
+    const [enrollments, statusRows] = await Promise.all([
+      populateEnrollment(Enrollment.find(query)).sort({ enrolledAt: -1 }),
+      Enrollment.aggregate([
+        { $match: { isActive: true } },
+        { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
+      ]),
+    ]);
 
-    let enrollments = await Enrollment.find(query)
-      .populate("student", "name email phone avatar")
-      .populate("batch", "name subject schedule fee status venue")
-      .sort({ enrolledAt: -1 });
+    const byStatus = Object.fromEntries(statusRows.map((r) => [r._id, r.count]));
+    const counts = {
+      total: statusRows.reduce((sum, r) => sum + r.count, 0),
+      paid: byStatus.paid || 0,
+      pending: byStatus.pending || 0,
+      waived: byStatus.waived || 0,
+    };
 
-    // In-memory filter for candidate name or email if search provided
-    if (search) {
-      const lowerSearch = search.toLowerCase();
-      enrollments = enrollments.filter(
-        (e) =>
-          e.student?.name?.toLowerCase().includes(lowerSearch) ||
-          e.student?.email?.toLowerCase().includes(lowerSearch) ||
-          e.batch?.name?.toLowerCase().includes(lowerSearch)
+    res.status(200).json({
+      success: true,
+      data: { enrollments, counts },
+      message: "Enrollments retrieved.",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PATCH /enrollments/:id/status (admin) — record offline payment / waiver, or reactivate
+export const updateEnrollmentStatus = async (req, res, next) => {
+  try {
+    const { paymentStatus, isActive } = req.body;
+
+    const enrollment = await Enrollment.findById(req.params.id);
+    if (!enrollment) return next(new AppError("Enrollment not found.", 404));
+
+    // A fee paid online through Razorpay can't be flipped back here: the money
+    // would still sit in Razorpay. Refund it from the Razorpay dashboard first.
+    if (paymentStatus && paymentStatus !== "paid" && enrollment.paymentStatus === "paid" && enrollment.payment) {
+      return next(
+        new AppError(
+          "This fee was paid online. Refund it from the Razorpay dashboard before changing its status.",
+          409
+        )
       );
     }
 
-    // Compute aggregate metrics
-    const [totalCount, paidCount, pendingCount, waivedCount] = await Promise.all([
-      Enrollment.countDocuments({ isActive: true }),
-      Enrollment.countDocuments({ isActive: true, paymentStatus: "paid" }),
-      Enrollment.countDocuments({ isActive: true, paymentStatus: "pending" }),
-      Enrollment.countDocuments({ isActive: true, paymentStatus: "waived" }),
-    ]);
+    const reactivating = isActive === true && !enrollment.isActive;
+    let batch = null;
 
-    res.status(200).json({
-      success: true,
-      message: "Enrollments retrieved successfully.",
-      data: {
-        enrollments,
-        counts: {
-          total: totalCount,
-          paid: paidCount,
-          pending: pendingCount,
-          waived: waivedCount,
-        },
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Update enrollment status (e.g. paymentStatus or isActive) (Admin only).
- */
-export const updateEnrollmentStatus = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { paymentStatus, isActive } = req.body;
-
-    const enrollment = await Enrollment.findById(id);
-    if (!enrollment) {
-      return next(new AppError("Enrollment record not found.", 404));
+    if (reactivating) {
+      // Same rules as a fresh enrollment: batch must be open and have a free seat
+      batch = await Batch.findById(enrollment.batch);
+      assertEnrollableBatch(batch);
+      await assertSeatAvailable(batch);
     }
 
-    if (paymentStatus) {
-      enrollment.paymentStatus = paymentStatus;
-    }
-    if (isActive !== undefined) {
-      enrollment.isActive = isActive;
-    }
-
+    if (paymentStatus) enrollment.paymentStatus = paymentStatus;
+    if (isActive !== undefined) enrollment.isActive = isActive;
     await enrollment.save();
 
-    const updated = await Enrollment.findById(id)
-      .populate("student", "name email phone avatar")
-      .populate("batch", "name subject schedule fee venue");
+    if (reactivating) {
+      await confirmSeatOrRollback(batch, () =>
+        Enrollment.updateOne({ _id: enrollment._id }, { isActive: false })
+      );
+    }
+
+    const populated = await populateEnrollment(Enrollment.findById(enrollment._id));
 
     res.status(200).json({
       success: true,
-      message: "Enrollment updated successfully.",
-      data: {
-        enrollment: updated,
-      },
+      data: { enrollment: populated },
+      message: "Enrollment updated.",
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Soft drop a student from a batch (Admin only).
- */
+// DELETE /enrollments/:id (admin) — soft drop, frees the seat
 export const dropStudent = async (req, res, next) => {
   try {
-    const { id } = req.params;
-
-    const enrollment = await Enrollment.findById(id);
-    if (!enrollment) {
-      return next(new AppError("Enrollment record not found.", 404));
-    }
+    const enrollment = await Enrollment.findById(req.params.id);
+    if (!enrollment) return next(new AppError("Enrollment not found.", 404));
 
     enrollment.isActive = false;
     await enrollment.save();
 
     res.status(200).json({
       success: true,
-      message: "Candidate has been soft-dropped from cohort. Roster vacancy created.",
-      data: {
-        id: enrollment._id,
-        isActive: false,
-      },
+      data: { id: enrollment._id, isActive: false },
+      message: "Student dropped from batch.",
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Helper to fetch active candidate students for Admin dropdown selection.
- */
-export const getCandidatesList = async (req, res, next) => {
+// GET /enrollments/students (admin) — options for the enroll form
+export const getStudentOptions = async (req, res, next) => {
   try {
     const students = await User.find({ role: "student", isActive: true })
-      .select("name email phone avatar")
+      .select("name email phone")
       .sort({ name: 1 });
 
-    res.status(200).json({
-      success: true,
-      message: "Active candidates retrieved.",
-      data: {
-        students,
-      },
-    });
+    res.status(200).json({ success: true, data: { students }, message: "Students retrieved." });
   } catch (error) {
     next(error);
   }

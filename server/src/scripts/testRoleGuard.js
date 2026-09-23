@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./_assertSafeDb.js";
 import mongoose from "mongoose";
 import express from "express";
 import connectDB from "../config/db.js";
@@ -72,13 +73,16 @@ const testRoleGuard = async () => {
     console.log("\n==================================");
     console.log("ALL RBAC ROLE-GUARD TESTS PASSED!");
     console.log("==================================\n");
-    await mongoose.disconnect();
-    server.close(() => {
-      process.exit(0);
-    });
   } catch (err) {
     console.error("Test failed:", err);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    const closed = new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    server.closeAllConnections?.();
+    await closed;
+    await mongoose.disconnect();
   }
 };
 

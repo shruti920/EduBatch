@@ -1,21 +1,22 @@
 import { z } from "zod";
+import { objectId } from "./common.js";
 
-const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+const paymentStatus = z.enum(["pending", "paid", "waived"], {
+  error: "Payment status must be pending, paid, or waived",
+});
 
 export const enrollStudentSchema = z.object({
-  student: z
-    .string({ required_error: "Candidate student ID is required" })
-    .regex(objectIdRegex, "Invalid student ObjectId format"),
-  batch: z
-    .string({ required_error: "Cohort batch ID is required" })
-    .regex(objectIdRegex, "Invalid batch ObjectId format"),
-  paymentStatus: z
-    .enum(["pending", "paid", "waived"])
-    .optional()
-    .default("pending"),
+  student: objectId("Student"),
+  batch: objectId("Batch"),
+  // Admin can record an offline payment or a waiver at enrollment time
+  paymentStatus: paymentStatus.optional().default("pending"),
 });
 
-export const updateEnrollmentStatusSchema = z.object({
-  paymentStatus: z.enum(["pending", "paid", "waived"]).optional(),
-  isActive: z.boolean().optional(),
-});
+export const updateEnrollmentStatusSchema = z
+  .object({
+    paymentStatus: paymentStatus.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((b) => b.paymentStatus !== undefined || b.isActive !== undefined, {
+    message: "Nothing to update",
+  });

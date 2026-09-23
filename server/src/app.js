@@ -9,63 +9,62 @@ import batchRoutes from "./routes/batches.js";
 import enrollmentRoutes from "./routes/enrollments.js";
 import attendanceRoutes from "./routes/attendance.js";
 import dashboardRoutes from "./routes/dashboard.js";
+import paymentRoutes from "./routes/payments.js";
+import noticeRoutes from "./routes/notices.js";
+import { handleWebhook } from "./controllers/paymentController.js";
 
 const app = express();
 
-// Security HTTP headers
-app.use(helmet());
+// Render/Vercel sit behind a proxy; needed so rate limiting sees the real client IP
+app.set("trust proxy", 1);
 
-// CORS configuration
-const allowedOrigin = process.env.CLIENT_URL || "http://localhost:5173";
+app.use(helmet());
 app.use(
   cors({
-    origin: allowedOrigin,
-    credentials: true,
+    // Comma-separated list, e.g. "https://edubatch.vercel.app,http://localhost:5173"
+    origin: (process.env.CLIENT_URL || "http://localhost:5173").split(",").map((o) => o.trim()),
   })
 );
+// Razorpay webhook needs the raw bytes to check its signature, so it is mounted
+// before express.json() parses (and re-shapes) the body
+app.post("/api/v1/payments/webhook", express.raw({ type: "application/json", limit: "100kb" }), handleWebhook);
 
-// Body parser
 app.use(express.json({ limit: "10kb" }));
 
-// Rate limiting on Auth endpoints
+// 10 failed attempts per 15 minutes per IP on login/register (spec §10)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per 15 minutes
-  standardHeaders: true,
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  // Only failed attempts count, so switching between accounts (e.g. a reviewer
+  // trying all three demo logins) never locks anyone out; brute force still does.
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
   message: {
     success: false,
-    message: "Too many authentication attempts from this IP. Please try again later.",
+    data: null,
+    message: "Too many failed attempts. Try again in 15 minutes.",
   },
 });
 
-// Health check route
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "EduBatch API is operational",
-    data: {
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || "development",
-    },
-  });
+  res.status(200).json({ success: true, data: { ok: true }, message: "OK" });
 });
 
-// API Routes
-app.use("/api/v1/auth", authLimiter, authRoutes);
+app.use("/api/v1/auth/login", authLimiter);
+app.use("/api/v1/auth/register", authLimiter);
+app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/batches", batchRoutes);
 app.use("/api/v1/enrollments", enrollmentRoutes);
 app.use("/api/v1/attendance", attendanceRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
+app.use("/api/v1/payments", paymentRoutes);
+app.use("/api/v1/notices", noticeRoutes);
 
-// Handle unhandled routes (404)
 app.all("{*path}", (req, res, next) => {
-  next(new AppError(`Cannot find ${req.method} ${req.originalUrl} on this server`, 404));
+  next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
 });
 
-// Global error handling middleware
 app.use(errorHandler);
 
 export default app;
-

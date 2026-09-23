@@ -1,112 +1,103 @@
 import Attendance from "../models/Attendance.js";
 import Batch from "../models/Batch.js";
 import Enrollment from "../models/Enrollment.js";
-import User from "../models/User.js";
 import AppError from "../utils/AppError.js";
+import { normalizeDate, todayKey } from "../utils/date.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const upsertDay = (batchId, date, records, markedBy) =>
+  Attendance.findOneAndUpdate(
+    { batch: batchId, date },
+    { records, markedBy },
+    { returnDocument: "after", upsert: true, runValidators: true, setDefaultsOnInsert: true }
+  );
 
 /**
- * Normalizes any date string or Date object to midnight UTC (00:00:00.000Z).
- * Ensures consistency across disparate client timezones and prevents duplicate records.
- */
-const normalizeDate = (dateInput) => {
-  const d = new Date(dateInput);
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
-};
-
-/**
- * Record or revise a whole-class attendance register for a cohort on a specific date.
- * Enforces role isolation, enrollment validation, and atomic upsert behavior.
+ * POST /attendance — mark (or update) one batch's attendance for one day.
+ * One document per batch per date; re-submitting the same date updates it.
+ *
+ * Rules:
+ * - only the batch's own teacher (or an admin), only for an active batch
+ * - not a future date, and not outside the batch's start/end dates
+ * - every submitted student must be enrolled, and appear once
+ * - every student who was enrolled by that day must be included (no silent gaps)
  */
 export const markAttendance = async (req, res, next) => {
   try {
     const { batch: batchId, date, records } = req.body;
 
-    // 1. Verify batch exists and is not archived
     const batch = await Batch.findById(batchId);
-    if (!batch) {
-      return next(new AppError("Cohort batch not found.", 404));
-    }
-    if (batch.isArchived || batch.status === "archived") {
-      return next(
-        new AppError("Cannot record attendance for an archived cohort.", 400)
-      );
-    }
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
-    // 2. Strict Role Isolation:
-    // Teachers may only record attendance for batches assigned under their charge.
     if (req.user.role === "teacher" && batch.teacher?.toString() !== req.user._id.toString()) {
-      return next(
-        new AppError(
-          "Forbidden: You are only authorized to mark attendance for cohorts assigned under your charge.",
-          403
-        )
-      );
+      return next(new AppError("You can only mark attendance for your own batches.", 403));
+    }
+    if (batch.status === "archived") {
+      return next(new AppError("Attendance can't be marked for an archived batch.", 400));
+    }
+    if (batch.status !== "active") {
+      return next(new AppError("This batch hasn't started. Mark it active before taking attendance.", 400));
     }
 
-    if (req.user.role === "student") {
-      return next(
-        new AppError("Forbidden: Candidates are not permitted to record attendance registers.", 403)
-      );
+    const day = normalizeDate(date);
+    if (Number.isNaN(day.getTime())) return next(new AppError("Invalid date.", 400));
+    if (day > todayKey()) return next(new AppError("Attendance can't be marked for a future date.", 400));
+    if (batch.startDate && day < normalizeDate(batch.startDate)) {
+      return next(new AppError("This date is before the batch start date.", 400));
+    }
+    if (batch.endDate && day > normalizeDate(batch.endDate)) {
+      return next(new AppError("This date is after the batch end date.", 400));
     }
 
-    // 3. Verify Active Cohort Enrollments
-    const activeEnrollments = await Enrollment.find({
-      batch: batch._id,
-      isActive: true,
-    }).select("student");
-
-    if (activeEnrollments.length === 0) {
-      return next(
-        new AppError(
-          "Cannot mark attendance for a cohort with zero enrolled candidates.",
-          400
-        )
-      );
+    const enrollments = await Enrollment.find({ batch: batch._id, isActive: true }).select("student enrolledAt");
+    if (enrollments.length === 0) {
+      return next(new AppError("This batch has no enrolled students yet.", 400));
     }
 
-    const enrolledStudentIds = new Set(
-      activeEnrollments.map((enr) => enr.student.toString())
-    );
+    const enrolledIds = new Set(enrollments.map((e) => e.student.toString()));
+    const submittedIds = new Set();
 
-    // Validate that every submitted candidate is actively enrolled in this batch
     for (const record of records) {
-      if (!enrolledStudentIds.has(record.student)) {
-        return next(
-          new AppError(
-            `Candidate with ID ${record.student} is not actively enrolled in this cohort.`,
-            400
-          )
-        );
+      if (!enrolledIds.has(record.student)) {
+        return next(new AppError(`Student ${record.student} is not enrolled in this batch.`, 400));
       }
+      if (submittedIds.has(record.student)) {
+        return next(new AppError("A student appears more than once in this attendance list.", 400));
+      }
+      submittedIds.add(record.student);
     }
 
-    // 4. Normalize date to midnight UTC
-    const normalizedDate = normalizeDate(date);
+    // Students who were already enrolled on that day must all be marked.
+    // (Someone who joined later can be included, but isn't required for an older date.)
+    const missing = enrollments.filter(
+      (e) => e.enrolledAt < new Date(day.getTime() + DAY_MS) && !submittedIds.has(e.student.toString())
+    );
+    if (missing.length) {
+      return next(
+        new AppError(`Mark every student in the batch. ${missing.length} student(s) are missing from this list.`, 400)
+      );
+    }
 
-    // 5. Atomic Upsert: Update existing register if already recorded for today, or create new
-    const updatedAttendance = await Attendance.findOneAndUpdate(
-      { batch: batch._id, date: normalizedDate },
-      {
-        records,
-        markedBy: req.user._id,
-      },
-      {
-        returnDocument: "after",
-        upsert: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-      }
-    )
-      .populate("records.student", "name email phone avatar")
-      .populate("markedBy", "name email role")
-      .populate("batch", "name subject venue schedule");
+    let saved;
+    try {
+      saved = await upsertDay(batch._id, day, records, req.user._id);
+    } catch (error) {
+      // Two people saving the same new day at once: the second upsert hits the
+      // unique { batch, date } index. Retrying turns it into a normal update.
+      if (error.code !== 11000) throw error;
+      saved = await upsertDay(batch._id, day, records, req.user._id);
+    }
+
+    const attendance = await Attendance.findById(saved._id)
+      .populate("records.student", "name email")
+      .populate("markedBy", "name role")
+      .populate("batch", "name subject schedule");
 
     res.status(200).json({
       success: true,
-      message: `Attendance register recorded successfully for ${normalizedDate.toISOString().slice(0, 10)}.`,
-      data: {
-        attendance: updatedAttendance,
-      },
+      message: `Attendance saved for ${day.toISOString().slice(0, 10)}.`,
+      data: { attendance },
     });
   } catch (error) {
     next(error);
@@ -114,7 +105,7 @@ export const markAttendance = async (req, res, next) => {
 };
 
 /**
- * Get attendance history for a batch with summary aggregates (Admin or assigned Teacher).
+ * GET /attendance/batch/:batchId — session history with per-day totals.
  */
 export const getBatchAttendance = async (req, res, next) => {
   try {
@@ -123,20 +114,20 @@ export const getBatchAttendance = async (req, res, next) => {
 
     const batch = await Batch.findById(batchId).populate("teacher", "name email");
     if (!batch) {
-      return next(new AppError("Cohort batch not found.", 404));
+      return next(new AppError("Batch not found.", 404));
     }
 
-    // Role check: Admin or assigned teacher
+    // Admin, or the batch's own teacher
     if (req.user.role === "student") {
       return next(
-        new AppError("Forbidden: Candidates cannot inspect cohort attendance registers.", 403)
+        new AppError("Students can't view batch attendance.", 403)
       );
     }
 
     if (req.user.role === "teacher" && batch.teacher?._id?.toString() !== req.user._id.toString()) {
       return next(
         new AppError(
-          "Forbidden: You can only view attendance registers for cohorts assigned under your charge.",
+          "You can only view attendance for your own batches.",
           403
         )
       );
@@ -184,7 +175,7 @@ export const getBatchAttendance = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Retrieved ${sessions.length} attendance sessions for ${batch.name}.`,
+      message: `${sessions.length} sessions found for ${batch.name}.`,
       data: {
         batch,
         totalSessions: sessions.length,
@@ -197,28 +188,28 @@ export const getBatchAttendance = async (req, res, next) => {
 };
 
 /**
- * Get attendance register for a batch on a specific date (Admin or assigned Teacher).
- * Useful to check if today's roll call is already recorded and pre-fill the form.
+ * GET /attendance/batch/:batchId/date/:date — used to pre-fill the marking form.
  */
 export const getBatchAttendanceByDate = async (req, res, next) => {
   try {
     const { batchId, date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return next(new AppError("Date must be YYYY-MM-DD.", 400));
 
     const batch = await Batch.findById(batchId);
     if (!batch) {
-      return next(new AppError("Cohort batch not found.", 404));
+      return next(new AppError("Batch not found.", 404));
     }
 
     if (req.user.role === "student") {
       return next(
-        new AppError("Forbidden: Candidates cannot inspect cohort attendance registers.", 403)
+        new AppError("Students can't view batch attendance.", 403)
       );
     }
 
     if (req.user.role === "teacher" && batch.teacher?.toString() !== req.user._id.toString()) {
       return next(
         new AppError(
-          "Forbidden: You can only inspect attendance for cohorts assigned under your charge.",
+          "You can only view attendance for your own batches.",
           403
         )
       );
@@ -236,8 +227,8 @@ export const getBatchAttendanceByDate = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: attendance
-        ? "Attendance register found."
-        : "No attendance register recorded for this date.",
+        ? "Attendance found for this date."
+        : "Attendance not marked for this date yet.",
       data: {
         isMarked: !!attendance,
         attendance: attendance || null,
@@ -249,11 +240,11 @@ export const getBatchAttendanceByDate = async (req, res, next) => {
 };
 
 /**
- * Get logged-in candidate's own attendance rates, per-batch breakdown, and session logs.
+ * GET /attendance/my — the student's overall and per-batch attendance.
  */
 export const getMyAttendance = async (req, res, next) => {
   try {
-    // 1. Find all active enrollments for this candidate
+    // 1. Active enrollments for this student
     const enrollments = await Enrollment.find({
       student: req.user._id,
       isActive: true,
@@ -262,14 +253,14 @@ export const getMyAttendance = async (req, res, next) => {
     if (enrollments.length === 0) {
       return res.status(200).json({
         success: true,
-        message: "Candidate has no active cohort enrollments.",
+        message: "You are not enrolled in any batch yet.",
         data: {
           overall: {
             totalSessions: 0,
             present: 0,
             late: 0,
             absent: 0,
-            percentage: 100,
+            percentage: null,
           },
           batches: [],
           history: [],
@@ -279,7 +270,7 @@ export const getMyAttendance = async (req, res, next) => {
 
     const batchIds = enrollments.map((e) => e.batch._id);
 
-    // 2. Find all attendance registers for these batches containing this candidate
+    // 2. Sessions in those batches that include this student
     const attendanceDocs = await Attendance.find({
       batch: { $in: batchIds },
       "records.student": req.user._id,
@@ -303,7 +294,7 @@ export const getMyAttendance = async (req, res, next) => {
         present: 0,
         late: 0,
         absent: 0,
-        percentage: 100,
+        percentage: null,
       };
     });
 
@@ -349,19 +340,19 @@ export const getMyAttendance = async (req, res, next) => {
     const overallPercentage =
       totalSessions > 0
         ? Math.round(((totalPresent + totalLate) / totalSessions) * 1000) / 10
-        : 100;
+        : null; // null = no classes yet (shown as "—", not a fake 100%)
 
     const batches = Object.values(batchStatsMap).map((b) => ({
       ...b,
       percentage:
         b.totalSessions > 0
           ? Math.round(((b.present + b.late) / b.totalSessions) * 1000) / 10
-          : 100,
+          : null,
     }));
 
     res.status(200).json({
       success: true,
-      message: "Candidate attendance summary retrieved.",
+      message: "Attendance summary retrieved.",
       data: {
         overall: {
           totalSessions,

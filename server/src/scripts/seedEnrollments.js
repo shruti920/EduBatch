@@ -58,12 +58,12 @@ const seedEnrollments = async () => {
       studentMap[s.email] = user;
     }
 
-    // 2. Fetch cohorts
+    // 2. Fetch batches
     const jeeBatch = await Batch.findOne({ name: "JEE Advanced 2026 — Morning Batch A" });
     const neetBatch = await Batch.findOne({ name: "NEET Target 2025 — Droppers Intensive" });
 
     if (!jeeBatch || !neetBatch) {
-      console.error("Cohorts not found. Run seedBatches.js first.");
+      console.error("Batches not found. Run seedBatches.js first.");
       process.exit(1);
     }
 

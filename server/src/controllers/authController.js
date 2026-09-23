@@ -4,8 +4,9 @@ import { signToken } from "../utils/jwt.js";
 import AppError from "../utils/AppError.js";
 
 /**
- * Register a new student account.
- * Note: Role is strictly forced to 'student' to prevent privilege escalation.
+ * POST /auth/register — public sign-up always creates a student.
+ * Admin and teacher accounts are created by an admin (seed script for now),
+ * so a client can never register itself into a higher role.
  */
 export const register = async (req, res, next) => {
   try {
@@ -14,7 +15,7 @@ export const register = async (req, res, next) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return next(
-        new AppError("An account with this email address already exists.", 409)
+        new AppError("An account with this email already exists.", 409)
       );
     }
 
@@ -25,14 +26,14 @@ export const register = async (req, res, next) => {
       email,
       password: hashedPassword,
       phone: phone || "",
-      role: "student", // Strictly hardcoded for public registration
+      role: "student",
     });
 
     const token = signToken({ id: user._id, role: user.role });
 
     res.status(201).json({
       success: true,
-      message: "Student account registered successfully.",
+      message: "Account created.",
       data: {
         user: user.toJSON(),
         token,
@@ -43,14 +44,11 @@ export const register = async (req, res, next) => {
   }
 };
 
-/**
- * Authenticate existing user and return JWT token.
- */
+// POST /auth/login
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // Explicitly select password field which is hidden by default
     const user = await User.findOne({ email }).select("+password");
 
     if (!user || !(await user.matchPassword(password))) {
@@ -60,7 +58,7 @@ export const login = async (req, res, next) => {
     if (!user.isActive) {
       return next(
         new AppError(
-          "Your account has been deactivated. Please contact an administrator.",
+          "This account has been deactivated. Contact an admin.",
           403
         )
       );
@@ -70,7 +68,7 @@ export const login = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: "Authentication successful.",
+      message: "Logged in.",
       data: {
         user: user.toJSON(),
         token,
@@ -81,14 +79,12 @@ export const login = async (req, res, next) => {
   }
 };
 
-/**
- * Get profile of current authenticated user.
- */
+// GET /auth/me
 export const getMe = async (req, res, next) => {
   try {
     res.status(200).json({
       success: true,
-      message: "Current user profile retrieved.",
+      message: "Profile retrieved.",
       data: {
         user: req.user.toJSON(),
       },

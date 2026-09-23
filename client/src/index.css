@@ -3,69 +3,94 @@
 @theme {
   --font-serif: "Newsreader", Georgia, Cambria, serif;
   --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "IBM Plex Mono", monospace;
 
-  /* Primary Ink */
-  --color-ink: #1B2A4A;
-  --color-ink-900: #101B30;
-  --color-ink-800: #1B2A4A;
+  /* Ink — headers, primary buttons, navigation */
+  --color-ink: #1b2a4a;
+  --color-ink-900: #121d34;
   --color-ink-700: #253963;
-  --color-ink-600: #334D80;
-  --color-ink-500: #4667A5;
-  --color-ink-200: #C2D0E8;
-  --color-ink-100: #E6EDF8;
-  --color-ink-50: #F2F6FC;
+  --color-ink-500: #4667a5;
+  --color-ink-100: #e6edf8;
 
-  /* Neutral Paper */
-  --color-paper: #F7F6F2;
-  --color-paper-light: #FFFFFF;
-  --color-paper-border: #E5E3DC;
-  --color-paper-muted: #EDECE6;
+  /* Paper — page background and rules */
+  --color-paper: #f7f6f2;
+  --color-paper-border: #e3e0d8;
+  --color-paper-muted: #eeece6;
 
-  /* Secondary Marigold / Amber */
-  --color-marigold: #D99A2B;
-  --color-marigold-dark: #A67119;
-  --color-marigold-light: #F4BA53;
-  --color-marigold-bg: #FEF8EC;
-  --color-marigold-border: #F3D28E;
+  /* Marigold — active states, upcoming, fee-due highlights */
+  --color-marigold: #d99a2b;
+  --color-marigold-dark: #8a5a10;
+  --color-marigold-bg: #fdf6e7;
+  --color-marigold-border: #efd08f;
 
-  /* Tertiary / Forest Success */
-  --color-forest: #2F6E4F;
-  --color-forest-dark: #1E4934;
-  --color-forest-light: #449B70;
-  --color-forest-bg: #EDF7F2;
-  --color-forest-border: #A3D4BC;
+  /* Success — paid, present */
+  --color-forest: #2f6e4f;
+  --color-forest-dark: #1e4934;
+  --color-forest-bg: #edf7f2;
+  --color-forest-border: #a3d4bc;
 
-  /* Attention / Alert Red */
-  --color-attention: #B23A32;
-  --color-attention-dark: #7F241E;
-  --color-attention-light: #D9564D;
-  --color-attention-bg: #FDF1F0;
-  --color-attention-border: #F3AAA5;
+  /* Attention — pending, absent, overdue */
+  --color-attention: #b23a32;
+  --color-attention-dark: #7f241e;
+  --color-attention-bg: #fdf1f0;
+  --color-attention-border: #f0b0ab;
 
-  /* Text & Labels */
-  --color-ink-text: #22242B;
-  --color-ink-muted: #5A6275;
+  /* Text */
+  --color-ink-text: #22242b;
+  --color-ink-muted: #5a6275;
 }
 
-:root {
-  font-family: var(--font-sans);
-  color: var(--color-ink-text);
-  background-color: var(--color-paper);
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink-text);
+    background-color: var(--color-paper);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* One consistent, visible keyboard focus style */
+  :focus-visible {
+    outline: 2px solid var(--color-marigold);
+    outline-offset: 2px;
+  }
+
+  input[type="date"],
+  input[type="time"] {
+    min-height: 38px;
+  }
 }
 
-/* Custom scrollbars for high data density tables */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Receipt printing: only the receipt is printed, nothing else on the page */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    padding: 2rem;
+  }
 }
-::-webkit-scrollbar-track {
-  background: #F1EFEA;
+
+/* Toasts slide up gently; no movement for people who prefer reduced motion */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
-::-webkit-scrollbar-thumb {
-  background: #C8C5BB;
-  border-radius: 3px;
+.toast-enter {
+  animation: toast-in 180ms ease-out;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #A6A398;
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter {
+    animation: none;
+  }
 }

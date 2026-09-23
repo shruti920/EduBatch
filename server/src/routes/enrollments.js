@@ -6,7 +6,7 @@ import {
   getAllEnrollments,
   updateEnrollmentStatus,
   dropStudent,
-  getCandidatesList,
+  getStudentOptions,
 } from "../controllers/enrollmentController.js";
 import { protect, restrictTo } from "../middleware/auth.js";
 import { validateBody } from "../middleware/validate.js";
@@ -17,16 +17,16 @@ import {
 
 const router = express.Router();
 
-// Candidate student self-desk route
+// Student: own enrollments
 router.get("/my", protect, restrictTo("student"), getMyEnrollments);
 
-// Helper for Admin enrollment modal
-router.get("/candidates", protect, restrictTo("admin"), getCandidatesList);
+// Student options for the enroll form (admin)
+router.get("/students", protect, restrictTo("admin"), getStudentOptions);
 
-// Roster for a specific batch (Admin or assigned Teacher)
+// Roster for one batch (admin, or that batch's teacher)
 router.get("/batch/:batchId", protect, restrictTo("admin", "teacher"), getBatchRoster);
 
-// Admin master ledger & enrollment actions
+// Admin: all enrollments and enrollment actions
 router.get("/", protect, restrictTo("admin"), getAllEnrollments);
 router.post(
   "/",

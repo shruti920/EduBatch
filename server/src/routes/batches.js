@@ -6,7 +6,7 @@ import {
   updateBatch,
   updateBatchStatus,
   archiveBatch,
-  getFacultyList,
+  getTeacherOptions,
 } from "../controllers/batchController.js";
 import { protect, restrictTo } from "../middleware/auth.js";
 import { validateBody } from "../middleware/validate.js";
@@ -18,10 +18,10 @@ import {
 
 const router = express.Router();
 
-// Faculty lead metadata for Admin dropdowns
-router.get("/meta/faculty", protect, restrictTo("admin"), getFacultyList);
+// Teacher options for the batch form (admin)
+router.get("/meta/teachers", protect, restrictTo("admin"), getTeacherOptions);
 
-// Core Batch routes
+// Role-scoped reads
 router.get("/", protect, getAllBatches);
 router.get("/:id", protect, getBatchById);
 

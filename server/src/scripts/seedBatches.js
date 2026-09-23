@@ -97,7 +97,7 @@ const seedBatches = async () => {
       const existing = await Batch.findOne({ name: batchData.name });
       if (!existing) {
         await Batch.create(batchData);
-        console.log(`Created cohort: "${batchData.name}"`);
+        console.log(`Created batch: "${batchData.name}"`);
       } else {
         await Batch.findByIdAndUpdate(existing._id, {
           status: batchData.status,
@@ -106,7 +106,7 @@ const seedBatches = async () => {
           fee: batchData.fee,
           schedule: batchData.schedule,
         });
-        console.log(`Updated cohort to active: "${batchData.name}"`);
+        console.log(`Updated batch to active: "${batchData.name}"`);
       }
     }
 

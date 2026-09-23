@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./_assertSafeDb.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -129,7 +130,7 @@ const runBatchTests = async () => {
     console.log("✓ TEST 6 PASSED: Batch status updated to archived.");
 
     // TEST 7: Admin fetches faculty list for dropdowns
-    const facRes = await fetch(`${baseUrl}/meta/faculty`, {
+    const facRes = await fetch(`${baseUrl}/meta/teachers`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const facData = await facRes.json();

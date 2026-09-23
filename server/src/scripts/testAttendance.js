@@ -1,4 +1,6 @@
 import "dotenv/config";
+import "./_assertSafeDb.js";
+import { todayKey } from "../utils/date.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -72,7 +74,10 @@ const runAttendanceTests = async () => {
       role: "student",
     });
 
-    const testDate = "2026-09-25";
+    // Today in the institute's timezone — future dates are rejected by the API
+    const testDate = todayKey().toISOString().slice(0, 10);
+    // Keep any real attendance for today so cleanup can put it back
+    const preexistingToday = await Attendance.findOne({ batch: jeeBatch._id, date: todayKey() }).lean();
 
     // -------------------------------------------------------------
     // TEST 1: Assigned Teacher marks attendance for their own batch
@@ -180,7 +185,7 @@ const runAttendanceTests = async () => {
 
     const attendanceCountForDate = await Attendance.countDocuments({
       batch: jeeBatch._id,
-      date: new Date(Date.UTC(2026, 8, 25, 0, 0, 0, 0)),
+      date: todayKey(),
     });
 
     if (
@@ -199,7 +204,7 @@ const runAttendanceTests = async () => {
     // -------------------------------------------------------------
     const test5Payload = {
       batch: jeeBatch._id.toString(),
-      date: "2026-09-26",
+      date: testDate,
       records: [
         {
           student: outsiderStudent._id.toString(),
@@ -218,7 +223,7 @@ const runAttendanceTests = async () => {
     });
     const test5Data = await test5Res.json();
 
-    if (test5Res.status === 400 && test5Data.message.includes("not actively enrolled")) {
+    if (test5Res.status === 400 && test5Data.message.includes("not enrolled")) {
       console.log("✓ TEST 5 PASSED: Non-enrolled candidate roll call correctly rejected (400 Bad Request).");
     } else {
       console.error("✗ TEST 5 FAILED:", test5Res.status, test5Data);
@@ -230,7 +235,7 @@ const runAttendanceTests = async () => {
     // -------------------------------------------------------------
     const test6Payload = {
       batch: archivedBatch._id.toString(),
-      date: "2026-09-26",
+      date: testDate,
       records: [
         {
           student: studentUser._id.toString(),
@@ -308,16 +313,75 @@ const runAttendanceTests = async () => {
       process.exit(1);
     }
 
+    const post = async (payload) => {
+      const res = await fetch(`${baseUrl}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${teacherToken}` },
+        body: JSON.stringify(payload),
+      });
+      return [res.status, await res.json()];
+    };
+    const fullRecords = jeeEnrollments.map((enr) => ({ student: enr.student.toString(), status: "present" }));
+    const expect = (label, [status, body], code, text) => {
+      if (status === code && body.message.includes(text)) {
+        console.log(`✓ ${label} (${code}: ${body.message})`);
+      } else {
+        console.error(`✗ ${label} FAILED:`, status, body);
+        process.exit(1);
+      }
+    };
+
+    // TEST 9: future date rejected
+    const tomorrow = new Date(todayKey().getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    expect("TEST 9 PASSED: Future date rejected", await post({ batch: jeeBatch._id.toString(), date: tomorrow, records: fullRecords }), 400, "future");
+
+    // TEST 10: the same student twice is rejected
+    expect(
+      "TEST 10 PASSED: Duplicate student rejected",
+      await post({ batch: jeeBatch._id.toString(), date: testDate, records: [...fullRecords, fullRecords[0]] }),
+      400,
+      "more than once"
+    );
+
+    // TEST 11: leaving an enrolled student out is rejected (no silent gaps)
+    if (fullRecords.length > 1) {
+      expect(
+        "TEST 11 PASSED: Incomplete list rejected",
+        await post({ batch: jeeBatch._id.toString(), date: testDate, records: fullRecords.slice(1) }),
+        400,
+        "missing"
+      );
+    }
+
+    // TEST 12: an upcoming (not started) batch can't take attendance
+    const upcomingBatch = await Batch.create({
+      name: `Upcoming Test Batch ${Date.now()}`,
+      subject: "Physics",
+      capacity: 10,
+      fee: 1000,
+      teacher: teacherUser._id,
+      createdBy: adminUser._id,
+      status: "upcoming",
+    });
+    expect(
+      "TEST 12 PASSED: Upcoming batch rejected",
+      await post({ batch: upcomingBatch._id.toString(), date: testDate, records: fullRecords }),
+      400,
+      "hasn't started"
+    );
+    await Batch.findByIdAndDelete(upcomingBatch._id);
+
     console.log("\n=======================================================");
-    console.log("ALL 8 MODULE 4 ATTENDANCE TESTS PASSED SUCCESSFULLY! ✓");
+    console.log("ALL 12 ATTENDANCE TESTS PASSED SUCCESSFULLY! ✓");
     console.log("=======================================================\n");
 
     // Clean up test entities
-    await Attendance.deleteOne({ batch: jeeBatch._id, date: new Date(Date.UTC(2026, 8, 25, 0, 0, 0, 0)) });
-    await User.findByIdAndDelete(otherTeacher._id);
+    await Attendance.deleteOne({ batch: jeeBatch._id, date: todayKey() });
+    if (preexistingToday) await Attendance.create(preexistingToday);
+    await User.deleteOne({ _id: otherTeacher._id });
     await Batch.findByIdAndDelete(otherBatch._id);
     await Batch.findByIdAndDelete(archivedBatch._id);
-    await User.findByIdAndDelete(outsiderStudent._id);
+    await User.deleteOne({ _id: outsiderStudent._id });
 
     server.close(() => {
       process.exit(0);

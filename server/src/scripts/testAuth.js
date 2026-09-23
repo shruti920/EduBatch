@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./_assertSafeDb.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -107,6 +108,28 @@ const runTests = async () => {
     const noTokenRes = await fetch(`${baseUrl}/me`);
     console.assert(noTokenRes.status === 401, `Expected 401, got ${noTokenRes.status}`);
     console.log("✓ TEST 7 PASSED: Protected /me without token rejected with 401");
+
+    // TEST 8: successful logins never count toward the rate limit (reviewers switching accounts)
+    const login = (password) =>
+      fetch(`${baseUrl}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "admin@edubatch.com", password }),
+      }).then((r) => r.status);
+    const goodStatuses = [];
+    for (let i = 0; i < 12; i += 1) goodStatuses.push(await login("Admin@123"));
+    if (goodStatuses.some((st) => st !== 200)) {
+      throw new Error(`TEST 8 FAILED: successful logins were limited: ${goodStatuses.join(",")}`);
+    }
+    console.log("✓ TEST 8 PASSED: 12 successful logins in a row were all allowed");
+
+    // TEST 9: repeated failed logins are still blocked (brute-force protection)
+    const badStatuses = [];
+    for (let i = 0; i < 11; i += 1) badStatuses.push(await login("wrong-password"));
+    if (!badStatuses.includes(429)) {
+      throw new Error(`TEST 9 FAILED: failed logins were never limited: ${badStatuses.join(",")}`);
+    }
+    console.log(`✓ TEST 9 PASSED: blocked with 429 after ${badStatuses.indexOf(429)} more failed attempts`);
 
     // Cleanup test users
     await User.deleteMany({ email: { $in: [testStudentEmail, privEmail] } });

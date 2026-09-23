@@ -1,481 +1,442 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  Users,
-  UserPlus,
-  Download,
-  Search,
-  CheckCircle2,
-  Clock,
-  ShieldCheck,
-  AlertTriangle,
-  UserMinus,
-  Filter,
-  GraduationCap,
-  Calendar,
-} from "lucide-react";
+import { Download, Search, UserPlus } from "lucide-react";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import EnrollStudentModal from "../../components/enrollments/EnrollStudentModal";
 import {
-  getAllEnrollments,
-  updateEnrollmentStatus,
-  dropStudent,
-} from "../../api/enrollmentApi";
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Loading,
+  Notice,
+  PageHeader,
+  PaymentPill,
+  Section,
+  SeatsPill,
+  StatStrip,
+  inputClass,
+} from "../../components/ui";
+import { dropStudent, getAllEnrollments, getBatchRoster, updateEnrollmentStatus } from "../../api/enrollmentApi";
 import { getBatches } from "../../api/batchApi";
 import { useAuth } from "../../context/AuthContext";
+import { useApi, useDebouncedValue } from "../../hooks/useApi";
+import { useToast } from "../../context/ToastContext";
+import { downloadCsv, errorMessage, formatDate, formatINR, todayLocal } from "../../utils/format";
 
-const EnrollmentRoster = () => {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const [searchParams, setSearchParams] = useSearchParams();
+const PAYMENT_TABS = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Fee pending" },
+  { key: "paid", label: "Paid" },
+  { key: "waived", label: "Waived" },
+];
 
-  const [enrollments, setEnrollments] = useState([]);
-  const [counts, setCounts] = useState({ total: 0, paid: 0, pending: 0, waived: 0 });
-  const [batches, setBatches] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+const FEE_ACTIONS = {
+  paid: { label: "Mark as paid", text: "Record that this fee was paid offline (cash or bank transfer)." },
+  waived: { label: "Waive fee", text: "The student won't be asked to pay for this batch." },
+  pending: { label: "Mark as pending", text: "The fee will show as due again." },
+};
 
-  // Filters
-  const [selectedBatch, setSelectedBatch] = useState(searchParams.get("batchId") || "all");
-  const [paymentFilter, setPaymentFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Modal
-  const [modalOpen, setModalOpen] = useState(false);
-
-  // Fetch batches for filter dropdown
-  useEffect(() => {
-    getBatches({ status: "all" })
-      .then((data) => setBatches(data.batches || []))
-      .catch((err) => console.error("Failed to load cohorts:", err));
-  }, []);
-
-  // Fetch enrollments
-  const fetchEnrollments = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError("");
-      const params = {
-        ...(selectedBatch !== "all" && { batch: selectedBatch }),
-        ...(paymentFilter !== "all" && { paymentStatus: paymentFilter }),
-        ...(searchTerm && { search: searchTerm }),
-      };
-      const data = await getAllEnrollments(params);
-      setEnrollments(data.enrollments || []);
-      if (data.counts) {
-        setCounts(data.counts);
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || err.message || "Failed to load roster.");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedBatch, paymentFilter, searchTerm]);
-
-  useEffect(() => {
-    fetchEnrollments();
-  }, [fetchEnrollments]);
-
-  // Action handlers
-  const handleDrop = async (enrollmentId, candidateName) => {
-    if (
-      window.confirm(
-        `Are you sure you want to drop candidate "${candidateName}" from this cohort? This will release their quota seat.`
-      )
-    ) {
-      try {
-        await dropStudent(enrollmentId);
-        fetchEnrollments();
-      } catch (err) {
-        alert("Failed to drop student: " + (err.response?.data?.message || err.message));
-      }
-    }
-  };
-
-  const handlePaymentToggle = async (enrollmentId, currentStatus) => {
-    const nextStatus =
-      currentStatus === "pending"
-        ? "paid"
-        : currentStatus === "paid"
-        ? "waived"
-        : "pending";
-
-    try {
-      await updateEnrollmentStatus(enrollmentId, { paymentStatus: nextStatus });
-      fetchEnrollments();
-    } catch (err) {
-      alert("Failed to update payment status: " + (err.response?.data?.message || err.message));
-    }
-  };
-
-  const exportCSV = () => {
-    if (enrollments.length === 0) return;
-    const headers = [
-      "Roll No",
-      "Candidate Name",
-      "Email",
-      "Phone",
-      "Cohort",
-      "Subject",
-      "Payment Status",
-      "Enrolled Date",
-    ];
-    const rows = enrollments.map((e, idx) => [
-      `"#ROL-${String(idx + 1).padStart(2, "0")}"`,
-      `"${e.student?.name || ""}"`,
-      `"${e.student?.email || ""}"`,
-      `"${e.student?.phone || ""}"`,
-      `"${e.batch?.name || ""}"`,
-      `"${e.batch?.subject || ""}"`,
-      e.paymentStatus,
-      new Date(e.enrolledAt).toLocaleDateString(),
-    ]);
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `EduBatch_Roster_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const getPaymentStatusBadge = (status) => {
-    if (status === "paid") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EDF7F2] text-[#1E4934] border border-[#A3D4BC] uppercase">
-          <CheckCircle2 size={11} />
-          PAID & CLEARED
-        </span>
-      );
-    }
-    if (status === "pending") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#FEF8EC] text-[#A67119] border border-[#F3D28E] uppercase">
-          <Clock size={11} />
-          PENDING DUE
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#E6EDF8] text-[#1B2A4A] border border-[#C2D0E8] uppercase">
-        <ShieldCheck size={11} />
-        SCHOLARSHIP WAIVED
+/* Fee + drop controls, shared by the desktop table and the mobile cards */
+const EnrollmentActions = ({ enrollment: e, onAction }) => (
+  <div className="inline-flex flex-wrap items-center justify-end gap-3">
+    {e.paymentStatus === "paid" && e.payment ? (
+      <span className="text-sm text-ink-muted" title="Refunds are handled in the Razorpay dashboard">
+        Paid online
       </span>
-    );
+    ) : (
+      <select
+        value=""
+        onChange={(ev) => ev.target.value && onAction({ type: "fee", enrollment: e, status: ev.target.value })}
+        aria-label={`Change fee status for ${e.student?.name}`}
+        className="w-40 rounded border border-paper-border bg-white px-2 py-1.5 text-sm"
+      >
+        <option value="">Change fee…</option>
+        {Object.entries(FEE_ACTIONS)
+          .filter(([status]) => status !== e.paymentStatus)
+          .map(([status, meta]) => (
+            <option key={status} value={status}>
+              {meta.label}
+            </option>
+          ))}
+      </select>
+    )}
+    <button
+      type="button"
+      onClick={() => onAction({ type: "drop", enrollment: e })}
+      className="text-attention underline underline-offset-2"
+    >
+      Drop
+    </button>
+  </div>
+);
+
+/* ---------- Admin: every enrollment, with fee and drop actions ---------- */
+
+const AdminEnrollments = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [batchId, setBatchId] = useState(searchParams.get("batchId") || "all");
+  const [payment, setPayment] = useState(searchParams.get("payment") || "all");
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search.trim());
+
+  const [enrollOpen, setEnrollOpen] = useState(Boolean(searchParams.get("enroll")));
+  const [action, setAction] = useState(null); // { type: "fee" | "drop", enrollment, status? }
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const params = {
+    batch: batchId === "all" ? undefined : batchId,
+    paymentStatus: payment === "all" ? undefined : payment,
+    search: debouncedSearch || undefined,
   };
+  const enrollments = useApi(() => getAllEnrollments(params), JSON.stringify(params));
+  const batches = useApi(() => getBatches({ status: "all" }), "roster-batches");
+
+  const rows = enrollments.data?.enrollments || [];
+  const counts = enrollments.data?.counts;
+  const batchList = batches.data?.batches || [];
+
+  const changeBatch = (value) => {
+    setBatchId(value);
+    setSearchParams(value === "all" ? {} : { batchId: value }, { replace: true });
+  };
+
+  const closeEnroll = () => {
+    setEnrollOpen(false);
+    if (searchParams.get("enroll")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("enroll");
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const runAction = async () => {
+    const { type, enrollment, status } = action;
+    setBusy(true);
+    try {
+      if (type === "drop") {
+        await dropStudent(enrollment._id);
+        toast.success(`${enrollment.student?.name} was dropped from ${enrollment.batch?.name}.`);
+      } else {
+        await updateEnrollmentStatus(enrollment._id, { paymentStatus: status });
+        toast.success(`Fee status updated for ${enrollment.student?.name}.`);
+      }
+      enrollments.reload();
+      batches.reload();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+      setAction(null);
+    }
+  };
+
+  const exportCsv = () =>
+    downloadCsv(
+      `edubatch-enrollments-${todayLocal()}.csv`,
+      ["Student", "Email", "Phone", "Batch", "Subject", "Fee (INR)", "Fee status", "Enrolled on"],
+      rows.map((e) => [
+        e.student?.name,
+        e.student?.email,
+        e.student?.phone,
+        e.batch?.name,
+        e.batch?.subject,
+        e.batch?.fee,
+        e.paymentStatus,
+        e.enrolledAt?.slice(0, 10),
+      ]),
+    );
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6 max-w-7xl mx-auto">
-        {/* Header Bar */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-[#E5E3DC]">
-          <div>
-            <div className="flex items-center gap-2 text-[10px] font-mono tracking-wider uppercase text-[#5A6275]">
-              <span>LEDGER REFERENCE: ROSTER-MGMT-2025</span>
-              <span>•</span>
-              <span className="text-[#2F6E4F] font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#2F6E4F]"></span>
-                ACTIVE ROSTER REGISTRY
-              </span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1B2A4A] tracking-tight mt-1">
-              Enrollment & Candidate Roster Ledger
-            </h1>
-            <p className="text-xs text-[#5A6275] font-sans mt-0.5">
-              Manage candidate cohort admissions, inspect tuition clearance states, and maintain real-time capacity compliance.
-            </p>
-          </div>
+    <>
+      <PageHeader
+        title="Enrollments"
+        description="Enroll students, record offline payments and waivers, and free up seats."
+        actions={
+          <>
+            <Button variant="secondary" onClick={exportCsv} disabled={!rows.length}>
+              <Download size={16} aria-hidden="true" /> Export CSV
+            </Button>
+            <Button onClick={() => setEnrollOpen(true)}>
+              <UserPlus size={16} aria-hidden="true" /> Enroll student
+            </Button>
+          </>
+        }
+      />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={exportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F6F2] text-[#1B2A4A] border border-[#E5E3DC] text-xs font-semibold rounded shadow-2xs transition-colors cursor-pointer"
-            >
-              <Download size={14} />
-              <span>Export Roster (CSV)</span>
-            </button>
-            {isAdmin && (
+      {enrollments.error && <Notice>{enrollments.error}</Notice>}
+
+      {counts && (
+        <StatStrip
+          items={[
+            { label: "Active enrollments", value: counts.total },
+            { label: "Paid", value: counts.paid, tone: "success" },
+            { label: "Fee pending", value: counts.pending, tone: counts.pending ? "attention" : undefined },
+            { label: "Waived", value: counts.waived },
+          ]}
+        />
+      )}
+
+      <Section>
+        <div className="flex flex-col gap-3 border-b border-paper-border p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div role="tablist" aria-label="Fee status" className="flex flex-wrap gap-1">
+            {PAYMENT_TABS.map((t) => (
               <button
+                key={t.key}
                 type="button"
-                onClick={() => setModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1B2A4A] hover:bg-[#253963] text-white text-xs font-semibold rounded shadow-xs transition-colors cursor-pointer"
+                role="tab"
+                aria-selected={payment === t.key}
+                onClick={() => setPayment(t.key)}
+                className={`rounded px-3 py-1.5 text-sm ${
+                  payment === t.key ? "bg-ink text-white" : "text-ink-muted hover:bg-paper-muted hover:text-ink"
+                }`}
               >
-                <UserPlus size={14} className="text-[#D99A2B]" />
-                <span>Enroll Student (Direct)</span>
+                {t.label}
               </button>
-            )}
+            ))}
           </div>
-        </div>
-
-        {/* 4 Summary Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-            <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-              <span>TOTAL ACTIVE ENROLLMENTS</span>
-              <Users size={14} className="text-[#64748B]" />
-            </div>
-            <div className="text-3xl font-serif font-bold text-[#1B2A4A] mt-2">
-              {counts.total}
-            </div>
-            <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-              Across all registered cohorts
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-            <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-              <span>TUITION CLEARED</span>
-              <CheckCircle2 size={14} className="text-[#2F6E4F]" />
-            </div>
-            <div className="text-3xl font-serif font-bold text-[#2F6E4F] mt-2">
-              {counts.paid}
-            </div>
-            <div className="text-[11px] font-mono text-[#2F6E4F] mt-1 font-semibold">
-              Online / Direct verified
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-            <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-              <span>PENDING TUITION DUES</span>
-              <Clock size={14} className="text-[#D99A2B]" />
-            </div>
-            <div className="text-3xl font-serif font-bold text-[#D99A2B] mt-2">
-              {counts.pending}
-            </div>
-            <div className="text-[11px] font-mono text-[#A67119] mt-1 font-semibold">
-              Awaiting settlement
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-            <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-              <span>MERIT SCHOLARSHIPS</span>
-              <ShieldCheck size={14} className="text-[#1B2A4A]" />
-            </div>
-            <div className="text-3xl font-serif font-bold text-[#1B2A4A] mt-2">
-              {counts.waived}
-            </div>
-            <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-              Sanctioned fee waivers
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Toolbar */}
-        <div className="bg-white border border-[#E5E3DC] rounded-lg p-3 shadow-2xs flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          {/* Cohort Selector */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-mono text-[#5A6275] text-[11px] font-semibold">COHORT:</span>
+          <div className="flex flex-col gap-2 sm:flex-row">
             <select
-              value={selectedBatch}
-              onChange={(e) => {
-                setSelectedBatch(e.target.value);
-                if (e.target.value === "all") {
-                  searchParams.delete("batchId");
-                } else {
-                  searchParams.set("batchId", e.target.value);
-                }
-                setSearchParams(searchParams);
-              }}
-              className="bg-[#F7F6F2] border border-[#E5E3DC] rounded px-3 py-1.5 text-xs text-[#22242B] font-sans focus:outline-none focus:border-[#1B2A4A] font-medium"
+              value={batchId}
+              onChange={(e) => changeBatch(e.target.value)}
+              aria-label="Filter by batch"
+              className={`${inputClass} sm:w-56`}
             >
-              <option value="all">All Cohorts (Master Roster)</option>
-              {batches.map((b) => (
+              <option value="all">All batches</option>
+              {batchList.map((b) => (
                 <option key={b._id} value={b._id}>
-                  {b.name} ({b.subject})
+                  {b.name}
                 </option>
               ))}
             </select>
-          </div>
-
-          {/* Payment Status Tabs & Search */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center bg-[#F7F6F2] p-0.5 rounded border border-[#E5E3DC] text-[11px] font-mono">
-              {[
-                { key: "all", label: "ALL" },
-                { key: "paid", label: "PAID" },
-                { key: "pending", label: "PENDING" },
-                { key: "waived", label: "WAIVED" },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setPaymentFilter(tab.key)}
-                  className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
-                    paymentFilter === tab.key
-                      ? "bg-[#1B2A4A] text-white font-bold shadow-xs"
-                      : "text-[#5A6275] hover:text-[#1B2A4A]"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
             <div className="relative">
               <Search
-                size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#64748B]"
+                size={16}
+                className="absolute top-1/2 left-3 -translate-y-1/2 text-ink-muted"
+                aria-hidden="true"
               />
               <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search candidate..."
-                className="pl-8 pr-3 py-1 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] placeholder-[#64748B] focus:outline-none focus:border-[#1B2A4A] focus:bg-white w-40 sm:w-48 transition-colors"
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search student name or email"
+                aria-label="Search students"
+                className={`${inputClass} pl-9 sm:w-64`}
               />
             </div>
           </div>
         </div>
 
-        {/* Master Candidate Roster Table */}
-        <div className="bg-white border border-[#E5E3DC] rounded-lg shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-[#E5E3DC] flex items-center justify-between bg-[#FCFBF8]">
-            <div className="font-serif font-bold text-[#1B2A4A] text-base">
-              Candidate Enrolled Roster Ledger
-            </div>
-            <div className="text-xs font-mono text-[#5A6275]">
-              Showing {enrollments.length} candidate entries
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans">
-              <thead className="bg-[#F7F6F2] border-b border-[#E5E3DC] text-[10px] font-mono uppercase text-[#5A6275]">
-                <tr>
-                  <th className="py-2.5 px-4 font-semibold">Roll #</th>
-                  <th className="py-2.5 px-4 font-semibold">Candidate Details</th>
-                  <th className="py-2.5 px-4 font-semibold">Enrolled Cohort</th>
-                  <th className="py-2.5 px-4 font-semibold">Admission Date</th>
-                  <th className="py-2.5 px-4 font-semibold">Payment Status</th>
-                  <th className="py-2.5 px-4 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E5E3DC] text-[12px]">
-                {loading ? (
+        {enrollments.loading && !enrollments.data ? (
+          <Loading />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title="No enrollments match"
+            action={<Button onClick={() => setEnrollOpen(true)}>Enroll a student</Button>}
+          >
+            Change the filters, or enroll a student into a batch.
+          </EmptyState>
+        ) : (
+          <>
+            {/* Phones: one card per enrollment instead of a sideways-scrolling table */}
+            <ul className={`divide-y divide-paper-border md:hidden ${enrollments.loading ? "opacity-60" : ""}`}>
+              {rows.map((e) => (
+                <li key={e._id} className="space-y-2 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink">{e.student?.name}</p>
+                      <p className="truncate text-xs text-ink-muted">{e.student?.email}</p>
+                    </div>
+                    <PaymentPill status={e.paymentStatus} />
+                  </div>
+                  <p className="text-sm">
+                    {e.batch?.name}
+                    <span className="text-ink-muted">
+                      {" "}
+                      · {formatINR(e.batch?.fee)} · joined {formatDate(e.enrolledAt)}
+                    </span>
+                  </p>
+                  <div className="flex justify-end">
+                    <EnrollmentActions enrollment={e} onAction={setAction} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className={`relative hidden overflow-x-auto md:block ${enrollments.loading ? "opacity-60" : ""}`}>
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="border-b border-paper-border text-ink-muted">
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-[#5A6275]">
-                      <div className="w-6 h-6 border-2 border-[#1B2A4A] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <span className="font-mono text-xs">Loading Candidate Roster...</span>
-                    </td>
+                    <th className="px-4 py-2.5 font-medium">Student</th>
+                    <th className="px-4 py-2.5 font-medium">Batch</th>
+                    <th className="px-4 py-2.5 font-medium">Enrolled on</th>
+                    <th className="px-4 py-2.5 font-medium">Fee</th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
-                ) : enrollments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="text-center py-12 text-[#5A6275]">
-                      <Users size={32} className="text-[#64748B] mx-auto mb-2" />
-                      <div className="font-serif font-bold text-[#1B2A4A] text-base">
-                        No Candidates Enrolled
-                      </div>
-                      <div className="text-xs mt-1">
-                        No enrollment records match the selected cohort or status filter.
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  enrollments.map((enr, idx) => (
-                    <tr key={enr._id} className="hover:bg-[#F9F8F5] transition-colors">
-                      {/* Roll # */}
-                      <td className="py-3 px-4 font-mono font-semibold text-[#1B2A4A]">
-                        #ROL-{String(idx + 1).padStart(2, "0")}
+                </thead>
+                <tbody className="divide-y divide-paper-border">
+                  {rows.map((e) => (
+                    <tr key={e._id} className="align-top">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-ink">{e.student?.name}</p>
+                        <p className="text-xs text-ink-muted">
+                          {e.student?.email}
+                          {e.student?.phone && ` · ${e.student.phone}`}
+                        </p>
                       </td>
-
-                      {/* Candidate */}
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-[#1B2A4A]">
-                          {enr.student?.name || "Unknown Candidate"}
-                        </div>
-                        <div className="text-[11px] text-[#5A6275] font-mono">
-                          {enr.student?.email}
-                        </div>
-                        {enr.student?.phone && (
-                          <div className="text-[10px] text-[#64748B] font-mono">
-                            {enr.student.phone}
-                          </div>
-                        )}
+                      <td className="px-4 py-3">
+                        <p>{e.batch?.name}</p>
+                        <p className="text-xs text-ink-muted">{formatINR(e.batch?.fee)}</p>
                       </td>
-
-                      {/* Batch */}
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-[#1B2A4A]">
-                          {enr.batch?.name || "N/A"}
-                        </div>
-                        <div className="text-[10px] text-[#5A6275]">
-                          {enr.batch?.subject} • ₹{enr.batch?.fee?.toLocaleString("en-IN")}
-                        </div>
+                      <td className="px-4 py-3 whitespace-nowrap">{formatDate(e.enrolledAt)}</td>
+                      <td className="px-4 py-3">
+                        <PaymentPill status={e.paymentStatus} />
                       </td>
-
-                      {/* Date */}
-                      <td className="py-3 px-4 font-mono text-[11px] text-[#5A6275]">
-                        {new Date(enr.enrolledAt).toLocaleDateString("en-US", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </td>
-
-                      {/* Payment Status Pill */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          {getPaymentStatusBadge(enr.paymentStatus)}
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handlePaymentToggle(enr._id, enr.paymentStatus)
-                              }
-                              className="text-[10px] font-mono text-[#5A6275] hover:text-[#1B2A4A] underline cursor-pointer"
-                              title="Toggle status (Pending -> Paid -> Waived)"
-                            >
-                              (Change)
-                            </button>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-4 text-right">
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleDrop(enr._id, enr.student?.name || "Candidate")
-                            }
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[#B23A32] hover:bg-[#FDF1F0] rounded text-[11px] font-medium border border-[#F3AAA5] transition-colors cursor-pointer"
-                            title="Soft Drop Student from Cohort"
-                          >
-                            <UserMinus size={12} />
-                            <span>Drop</span>
-                          </button>
-                        )}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <EnrollmentActions enrollment={e} onAction={setAction} />
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Section>
 
-          <div className="p-3 border-t border-[#E5E3DC] bg-[#FCFBF8] text-[11px] font-mono text-[#5A6275] flex items-center justify-between">
-            <span>Official Ledger Registry: Compliant with Capacity Guard v1.0</span>
-            <span>Kota Science Academy</span>
-          </div>
-        </div>
+      <EnrollStudentModal
+        open={enrollOpen}
+        initialBatchId={batchId === "all" ? "" : batchId}
+        onClose={closeEnroll}
+        onEnrolled={(message) => {
+          closeEnroll();
+          toast.success(message);
+          enrollments.reload();
+          batches.reload();
+        }}
+      />
 
-        {/* Direct Enrollment Modal */}
-        <EnrollStudentModal
-          isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
-          onSuccess={fetchEnrollments}
-          initialBatchId={selectedBatch !== "all" ? selectedBatch : null}
-        />
-      </div>
-    </DashboardLayout>
+      <ConfirmDialog
+        open={Boolean(action)}
+        title={action?.type === "drop" ? "Drop this student?" : FEE_ACTIONS[action?.status]?.label}
+        confirmLabel={action?.type === "drop" ? "Drop student" : "Confirm"}
+        tone={action?.type === "drop" ? "danger" : "primary"}
+        busy={busy}
+        onConfirm={runAction}
+        onClose={() => setAction(null)}
+      >
+        <p>
+          <strong>{action?.enrollment?.student?.name}</strong> · {action?.enrollment?.batch?.name}
+        </p>
+        <p className="mt-2 text-ink-muted">
+          {action?.type === "drop"
+            ? "Their seat is freed. Their enrollment and attendance history is kept, and you can enroll them again later."
+            : FEE_ACTIONS[action?.status]?.text}
+        </p>
+      </ConfirmDialog>
+    </>
   );
+};
+
+/* ---------- Teacher: read-only rosters for their own batches ---------- */
+
+const TeacherRosters = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const batches = useApi(() => getBatches(), "teacher-batches");
+  const batchList = batches.data?.batches || [];
+  const batchId = searchParams.get("batchId") || batchList[0]?._id || "";
+
+  const roster = useApi(() => (batchId ? getBatchRoster(batchId) : Promise.resolve(null)), batchId);
+  const students = roster.data?.roster || [];
+
+  const exportCsv = () =>
+    downloadCsv(
+      `edubatch-roster-${roster.data?.batch?.name || "batch"}-${todayLocal()}.csv`,
+      ["Student", "Email", "Phone", "Enrolled on"],
+      students.map((e) => [e.student?.name, e.student?.email, e.student?.phone, e.enrolledAt?.slice(0, 10)]),
+    );
+
+  return (
+    <>
+      <PageHeader
+        title="Rosters"
+        description="Students enrolled in the batches you teach."
+        actions={
+          <Button variant="secondary" onClick={exportCsv} disabled={!students.length}>
+            <Download size={16} aria-hidden="true" /> Export CSV
+          </Button>
+        }
+      />
+
+      {(batches.error || roster.error) && <Notice>{batches.error || roster.error}</Notice>}
+
+      {batches.loading && !batches.data ? (
+        <Loading />
+      ) : batchList.length === 0 ? (
+        <Section>
+          <EmptyState title="No batches assigned to you yet">
+            An admin assigns teachers when creating a batch.
+          </EmptyState>
+        </Section>
+      ) : (
+        <Section
+          title={
+            <select
+              value={batchId}
+              onChange={(e) => setSearchParams({ batchId: e.target.value }, { replace: true })}
+              aria-label="Choose batch"
+              className={`${inputClass} font-semibold sm:w-72`}
+            >
+              {batchList.map((b) => (
+                <option key={b._id} value={b._id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          }
+          aside={
+            roster.data && <SeatsPill enrolled={roster.data.counts.enrolled} capacity={roster.data.counts.capacity} />
+          }
+        >
+          {roster.loading && !roster.data ? (
+            <Loading />
+          ) : students.length === 0 ? (
+            <EmptyState title="No students enrolled yet" />
+          ) : (
+            <div className="relative overflow-x-auto">
+              <table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="border-b border-paper-border text-ink-muted">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Student</th>
+                    <th className="px-4 py-2.5 font-medium">Phone</th>
+                    <th className="px-4 py-2.5 font-medium">Enrolled on</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-paper-border">
+                  {students.map((e) => (
+                    <tr key={e._id}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-ink">{e.student?.name}</p>
+                        <p className="text-xs text-ink-muted">{e.student?.email}</p>
+                      </td>
+                      <td className="px-4 py-3">{e.student?.phone || "—"}</td>
+                      <td className="px-4 py-3">{formatDate(e.enrolledAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
+    </>
+  );
+};
+
+const EnrollmentRoster = () => {
+  const { user } = useAuth();
+  return <DashboardLayout>{user?.role === "admin" ? <AdminEnrollments /> : <TeacherRosters />}</DashboardLayout>;
 };
 
 export default EnrollmentRoster;

@@ -1,371 +1,227 @@
-import React, { useState, useEffect } from "react";
-import { X, Calendar, Clock, Users, IndianRupee, MapPin, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { Button, Field, Modal, Notice, inputClass } from "../ui";
 import { createBatch, updateBatch } from "../../api/batchApi";
+import { errorMessage } from "../../utils/format";
 
-const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const BatchModal = ({ isOpen, onClose, onSuccess, editBatch = null, teachers = [] }) => {
-  const [formData, setFormData] = useState({
-    name: "",
-    subject: "",
-    description: "",
-    capacity: 40,
-    fee: 35000,
-    teacher: "",
-    status: "upcoming",
-    days: ["Mon", "Wed", "Fri"],
-    startTime: "07:00",
-    endTime: "09:30",
-    venue: "Hall 3 (Auditorium)",
-    startDate: "",
-    endDate: "",
-  });
+const toForm = (batch) => ({
+  name: batch?.name || "",
+  subject: batch?.subject || "",
+  description: batch?.description || "",
+  teacher: batch?.teacher?._id || batch?.teacher || "",
+  capacity: batch?.capacity ?? "",
+  fee: batch?.fee ?? "",
+  status: batch?.status === "active" ? "active" : "upcoming",
+  startDate: batch?.startDate ? batch.startDate.slice(0, 10) : "",
+  endDate: batch?.endDate ? batch.endDate.slice(0, 10) : "",
+  days: batch?.schedule?.days || [],
+  startTime: batch?.schedule?.startTime || "",
+  endTime: batch?.schedule?.endTime || "",
+  venue: batch?.schedule?.venue || "",
+});
 
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+const validate = (f) => {
+  const e = {};
+  if (f.name.trim().length < 3) e.name = "Use at least 3 characters.";
+  if (f.subject.trim().length < 2) e.subject = "Enter a subject.";
+  if (!f.teacher) e.teacher = "Choose a teacher.";
+  if (!Number.isInteger(Number(f.capacity)) || Number(f.capacity) < 1 || Number(f.capacity) > 500 || f.capacity === "")
+    e.capacity = "Whole number from 1 to 500.";
+  if (f.fee === "" || Number(f.fee) < 0) e.fee = "Enter the fee in rupees (0 or more).";
+  if (!f.days.length) e.days = "Pick at least one class day.";
+  if (!f.startTime) e.startTime = "Required.";
+  if (!f.endTime) e.endTime = "Required.";
+  if (f.startTime && f.endTime && f.endTime <= f.startTime) e.endTime = "Must be after the start time.";
+  if (f.startDate && f.endDate && f.endDate < f.startDate) e.endDate = "Can't be before the start date.";
+  return e;
+};
 
-  useEffect(() => {
-    if (editBatch) {
-      setFormData({
-        name: editBatch.name || "",
-        subject: editBatch.subject || "",
-        description: editBatch.description || "",
-        capacity: editBatch.capacity || 40,
-        fee: editBatch.fee || 0,
-        teacher: editBatch.teacher?._id || editBatch.teacher || "",
-        status: editBatch.status || "upcoming",
-        days: editBatch.schedule?.days || ["Mon", "Wed", "Fri"],
-        startTime: editBatch.schedule?.startTime || "07:00",
-        endTime: editBatch.schedule?.endTime || "09:30",
-        venue: editBatch.schedule?.venue || "Hall 3 (Auditorium)",
-        startDate: editBatch.startDate ? editBatch.startDate.split("T")[0] : "",
-        endDate: editBatch.endDate ? editBatch.endDate.split("T")[0] : "",
-      });
-    } else {
-      // Default to first teacher if available
-      setFormData({
-        name: "",
-        subject: "",
-        description: "",
-        capacity: 40,
-        fee: 35000,
-        teacher: teachers[0]?._id || "",
-        status: "upcoming",
-        days: ["Mon", "Wed", "Fri"],
-        startTime: "07:00",
-        endTime: "09:30",
-        venue: "Hall 3 (Auditorium)",
-        startDate: "",
-        endDate: "",
-      });
-    }
-    setError("");
-  }, [editBatch, teachers, isOpen]);
+// Server returns field errors keyed like "schedule.endTime"; map them onto form fields
+const fromServerErrors = (errors) =>
+  Object.fromEntries(Object.entries(errors || {}).map(([k, v]) => [k.replace("schedule.", ""), v]));
 
-  if (!isOpen) return null;
+// Mounted fresh for each open (see wrapper below), so the initial state is always the right batch
+const BatchForm = ({ batch, teachers, onClose, onSaved }) => {
+  const isEdit = Boolean(batch);
+  const [form, setForm] = useState(() => toForm(batch));
+  const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const handleDayToggle = (day) => {
-    setFormData((prev) => {
-      const exists = prev.days.includes(day);
-      const updated = exists
-        ? prev.days.filter((d) => d !== day)
-        : [...prev.days, day];
-      return { ...prev, days: updated.length > 0 ? updated : [day] };
-    });
-  };
+  const set = (name, value) => setForm((prev) => ({ ...prev, [name]: value }));
+  const onInput = (e) => set(e.target.name, e.target.value);
+  const toggleDay = (day) =>
+    set("days", form.days.includes(day) ? form.days.filter((d) => d !== day) : DAYS.filter((d) => d === day || form.days.includes(d)));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-
-    if (!formData.name.trim() || !formData.subject.trim()) {
-      setError("Batch name and subject are mandatory.");
-      return;
-    }
-
-    if (!formData.teacher) {
-      setError("Please assign a designated faculty lead.");
-      return;
-    }
-
-    if (formData.days.length === 0) {
-      setError("Select at least one lecture day for the schedule.");
-      return;
-    }
-
-    setLoading(true);
+    setServerError("");
+    const nextErrors = validate(form);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
 
     const payload = {
-      name: formData.name.trim(),
-      subject: formData.subject.trim(),
-      description: formData.description.trim(),
-      capacity: Number(formData.capacity),
-      fee: Number(formData.fee),
-      teacher: formData.teacher,
-      status: formData.status,
+      name: form.name.trim(),
+      subject: form.subject.trim(),
+      description: form.description.trim(),
+      teacher: form.teacher,
+      capacity: Number(form.capacity),
+      fee: Number(form.fee),
+      startDate: form.startDate || null,
+      endDate: form.endDate || null,
       schedule: {
-        days: formData.days,
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        venue: formData.venue.trim(),
+        days: form.days,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        venue: form.venue.trim(),
       },
-      startDate: formData.startDate || null,
-      endDate: formData.endDate || null,
     };
+    // Status of an archived batch is changed with Restore, not from this form
+    if (!isEdit || batch.status !== "archived") payload.status = form.status;
 
+    setSaving(true);
     try {
-      if (editBatch) {
-        await updateBatch(editBatch._id, payload);
-      } else {
-        await createBatch(payload);
-      }
-      onSuccess();
-      onClose();
+      if (isEdit) await updateBatch(batch._id, payload);
+      else await createBatch(payload);
+      onSaved(isEdit ? "Batch updated." : `${payload.name} created.`);
     } catch (err) {
-      setError(
-        err.response?.data?.message || err.message || "Failed to save batch details."
-      );
-    } finally {
-      setLoading(false);
+      setErrors(fromServerErrors(err.response?.data?.errors));
+      setServerError(errorMessage(err));
+      setSaving(false);
     }
   };
 
+  const input = (name, props = {}) => (
+    <input
+      id={`batch-${name}`}
+      name={name}
+      value={form[name]}
+      onChange={onInput}
+      aria-invalid={Boolean(errors[name])}
+      className={`${inputClass} ${errors[name] ? "border-attention" : ""}`}
+      {...props}
+    />
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#101B30]/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white border border-[#E5E3DC] rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-[#E5E3DC] flex items-center justify-between bg-[#FCFBF8]">
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-[#5A6275]">
-              CURRICULUM REGISTRY ENTRY
-            </div>
-            <h2 className="text-xl font-serif font-bold text-[#1B2A4A] mt-0.5">
-              {editBatch ? "Modify Cohort Configuration" : "Register New Academic Cohort"}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded text-[#64748B] hover:text-[#1B2A4A] hover:bg-[#F2F6FC] transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      {serverError && <Notice>{serverError}</Notice>}
 
-        {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 text-xs font-sans">
-          {error && (
-            <div className="p-3 bg-[#FDF1F0] border border-[#F3AAA5] rounded text-xs text-[#B23A32] flex items-start gap-2">
-              <AlertCircle size={16} className="shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Batch Name & Subject */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Batch / Cohort Title *
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g. JEE Advanced 2026 — Morning Batch A"
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Subject / Discipline *
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.subject}
-                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                placeholder="e.g. Physics & Pure Math"
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-              Curriculum Syllabus & Objectives
-            </label>
-            <textarea
-              rows={2}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Target AIR top 500, rigorous weekly problem sheets, mechanics & calculus focus..."
-              className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none"
-            />
-          </div>
-
-          {/* Faculty Lead & Venue */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Assigned Faculty Lead *
-              </label>
-              <select
-                required
-                value={formData.teacher}
-                onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none font-medium"
-              >
-                <option value="">-- Select Designated Teacher --</option>
-                {teachers.map((t) => (
-                  <option key={t._id} value={t._id}>
-                    {t.name} ({t.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Venue / Classroom Hall
-              </label>
-              <input
-                type="text"
-                value={formData.venue}
-                onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
-                placeholder="e.g. Hall 3 (Auditorium)"
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Capacity, Tuition Fee & Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Capacity Quota *
-              </label>
-              <input
-                type="number"
-                required
-                min={1}
-                max={500}
-                value={formData.capacity}
-                onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Tuition Fee (₹ INR) *
-              </label>
-              <input
-                type="number"
-                required
-                min={0}
-                value={formData.fee}
-                onChange={(e) => setFormData({ ...formData, fee: e.target.value })}
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Lifecycle Status
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none font-mono font-semibold uppercase"
-              >
-                <option value="upcoming">Upcoming</option>
-                <option value="active">Active</option>
-                <option value="archived">Archived</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Schedule: Day Selection Pills */}
-          <div>
-            <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1.5">
-              Scheduled Class Days
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {ALL_DAYS.map((day) => {
-                const selected = formData.days.includes(day);
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => handleDayToggle(day)}
-                    className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
-                      selected
-                        ? "bg-[#1B2A4A] text-white shadow-xs border border-[#1B2A4A]"
-                        : "bg-[#F7F6F2] text-[#5A6275] border border-[#E5E3DC] hover:border-[#1B2A4A]"
-                    }`}
-                  >
-                    {day}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Class Timings */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Class Start Time (24h)
-              </label>
-              <input
-                type="time"
-                value={formData.startTime}
-                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-mono font-semibold uppercase text-[#1B2A4A] mb-1">
-                Class End Time (24h)
-              </label>
-              <input
-                type="time"
-                value={formData.endTime}
-                onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                className="w-full px-3 py-2 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:bg-white focus:border-[#1B2A4A] focus:outline-none font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Modal Footer */}
-          <div className="pt-4 border-t border-[#E5E3DC] flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 bg-white hover:bg-[#F7F6F2] text-[#5A6275] border border-[#E5E3DC] rounded text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-5 py-2 bg-[#1B2A4A] hover:bg-[#253963] text-white rounded text-xs font-semibold uppercase tracking-wider transition-colors shadow-xs disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-            >
-              {loading ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <span>{editBatch ? "Update Cohort" : "Register Cohort"}</span>
-              )}
-            </button>
-          </div>
-        </form>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Batch name" htmlFor="batch-name" error={errors.name}>
+          {input("name", { placeholder: "JEE 2027 Morning" })}
+        </Field>
+        <Field label="Subject" htmlFor="batch-subject" error={errors.subject}>
+          {input("subject", { placeholder: "Physics" })}
+        </Field>
       </div>
-    </div>
+
+      <Field label="Description (optional)" htmlFor="batch-description">
+        <textarea
+          id="batch-description"
+          name="description"
+          rows={2}
+          value={form.description}
+          onChange={onInput}
+          className={inputClass}
+        />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Teacher" htmlFor="batch-teacher" error={errors.teacher}>
+          <select
+            id="batch-teacher"
+            name="teacher"
+            value={form.teacher}
+            onChange={onInput}
+            className={`${inputClass} ${errors.teacher ? "border-attention" : ""}`}
+          >
+            <option value="">Choose a teacher</option>
+            {teachers.map((t) => (
+              <option key={t._id} value={t._id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Capacity" htmlFor="batch-capacity" error={errors.capacity} hint={isEdit ? `${batch.enrolledCount ?? 0} enrolled now` : undefined}>
+          {input("capacity", { type: "number", min: 1, max: 500, inputMode: "numeric" })}
+        </Field>
+        <Field label="Fee (₹)" htmlFor="batch-fee" error={errors.fee}>
+          {input("fee", { type: "number", min: 0, inputMode: "numeric" })}
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Start date" htmlFor="batch-startDate" error={errors.startDate}>
+          {input("startDate", { type: "date" })}
+        </Field>
+        <Field label="End date" htmlFor="batch-endDate" error={errors.endDate}>
+          {input("endDate", { type: "date", min: form.startDate || undefined })}
+        </Field>
+      </div>
+
+      <fieldset>
+        <legend className="mb-1 text-sm font-medium text-ink">Class days</legend>
+        <div className="flex flex-wrap gap-1.5">
+          {DAYS.map((day) => {
+            const selected = form.days.includes(day);
+            return (
+              <button
+                key={day}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleDay(day)}
+                className={`w-12 rounded border py-1.5 text-sm ${
+                  selected ? "border-ink bg-ink text-white" : "border-paper-border text-ink-muted hover:border-ink"
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+        {errors.days && <p className="mt-1 text-xs text-attention">{errors.days}</p>}
+      </fieldset>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Starts at" htmlFor="batch-startTime" error={errors.startTime}>
+          {input("startTime", { type: "time" })}
+        </Field>
+        <Field label="Ends at" htmlFor="batch-endTime" error={errors.endTime}>
+          {input("endTime", { type: "time" })}
+        </Field>
+        <Field label="Room (optional)" htmlFor="batch-venue" error={errors.venue}>
+          {input("venue", { placeholder: "Room 2" })}
+        </Field>
+      </div>
+
+      {(!isEdit || batch.status !== "archived") && (
+        <Field label="Status" htmlFor="batch-status">
+          <select id="batch-status" name="status" value={form.status} onChange={onInput} className={inputClass}>
+            <option value="upcoming">Upcoming</option>
+            <option value="active">Active</option>
+          </select>
+        </Field>
+      )}
+
+      <div className="flex justify-end gap-2 border-t border-paper-border pt-4">
+        <Button variant="secondary" onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? "Saving…" : isEdit ? "Save changes" : "Create batch"}
+        </Button>
+      </div>
+    </form>
   );
 };
+
+const BatchModal = ({ open, batch, teachers, onClose, onSaved }) => (
+  <Modal open={open} title={batch ? "Edit batch" : "New batch"} onClose={onClose} size="lg">
+    {open && <BatchForm key={batch?._id || "new"} batch={batch} teachers={teachers} onClose={onClose} onSaved={onSaved} />}
+  </Modal>
+);
 
 export default BatchModal;

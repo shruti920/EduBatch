@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./_assertSafeDb.js";
 import app from "../app.js";
 import connectDB from "../config/db.js";
 import User from "../models/User.js";
@@ -31,13 +32,13 @@ const runDashboardTests = async () => {
     if (
       test1Res.status === 200 &&
       test1Data.success &&
-      typeof test1Data.data?.counts?.totalBatches === "number" &&
-      typeof test1Data.data?.counts?.totalEnrolledSeats === "number" &&
-      typeof test1Data.data?.financials?.realizedFees === "number" &&
+      typeof test1Data.data?.counts?.activeBatches === "number" &&
+      typeof test1Data.data?.counts?.enrolledSeats === "number" &&
+      typeof test1Data.data?.fees?.collected === "number" &&
       Array.isArray(test1Data.data?.batches)
     ) {
       console.log(
-        `✓ TEST 1 PASSED: Admin dashboard returned genuine aggregates (Batches: ${test1Data.data.counts.totalBatches}, Enrolled: ${test1Data.data.counts.totalEnrolledSeats}, Realized: ₹${test1Data.data.financials.realizedFees}).`
+        `✓ TEST 1 PASSED: Admin dashboard (active batches: ${test1Data.data.counts.activeBatches}, enrolled: ${test1Data.data.counts.enrolledSeats}, collected: ₹${test1Data.data.fees.collected}).`
       );
     } else {
       console.error("✗ TEST 1 FAILED:", test1Res.status, test1Data);
@@ -68,7 +69,7 @@ const runDashboardTests = async () => {
       typeof test3Data.data?.totalStudents === "number"
     ) {
       console.log(
-        `✓ TEST 3 PASSED: Teacher dashboard returned assigned cohorts (${test3Data.data.totalBatches} batches, ${test3Data.data.totalStudents} students, status: ${test3Data.data.rollCallStatus}).`
+        `✓ TEST 3 PASSED: Teacher dashboard (${test3Data.data.totalBatches} batches, ${test3Data.data.totalStudents} students, ${test3Data.data.markedToday} marked today).`
       );
     } else {
       console.error("✗ TEST 3 FAILED:", test3Res.status, test3Data);
@@ -85,10 +86,10 @@ const runDashboardTests = async () => {
       test4Res.status === 200 &&
       test4Data.success &&
       typeof test4Data.data?.totalEnrolled === "number" &&
-      typeof test4Data.data?.attendanceRate === "number"
+      typeof test4Data.data?.attendance?.total === "number"
     ) {
       console.log(
-        `✓ TEST 4 PASSED: Student dashboard returned personal cohorts (${test4Data.data.totalEnrolled} enrolled, ${test4Data.data.attendanceRate}% attendance).`
+        `✓ TEST 4 PASSED: Student dashboard (${test4Data.data.totalEnrolled} enrolled, attendance ${test4Data.data.attendance.rate ?? "—"}%).`
       );
     } else {
       console.error("✗ TEST 4 FAILED:", test4Res.status, test4Data);

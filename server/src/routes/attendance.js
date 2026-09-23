@@ -11,10 +11,10 @@ import { markAttendanceSchema } from "../validations/attendanceValidation.js";
 
 const router = express.Router();
 
-// Candidate Student personal attendance summary and history
+// Student: own attendance summary
 router.get("/my", protect, restrictTo("student"), getMyAttendance);
 
-// Single date attendance check for a batch (Admin or assigned Teacher)
+// One batch, one date (admin, or that batch's teacher)
 router.get(
   "/batch/:batchId/date/:date",
   protect,
@@ -22,7 +22,7 @@ router.get(
   getBatchAttendanceByDate
 );
 
-// Cohort historical attendance register sessions (Admin or assigned Teacher)
+// Session history for a batch (admin, or that batch's teacher)
 router.get(
   "/batch/:batchId",
   protect,
@@ -30,7 +30,7 @@ router.get(
   getBatchAttendance
 );
 
-// Submit or revise a roll call register (Admin or assigned Teacher)
+// Mark or update a day's attendance (admin, or that batch's teacher)
 router.post(
   "/",
   protect,

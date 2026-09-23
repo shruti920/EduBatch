@@ -1,125 +1,116 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import api from "../api/axios";
+/* eslint-disable react-refresh/only-export-components -- provider and hook live together on purpose */
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import api, { TOKEN_KEY, USER_KEY } from "../api/axios";
 
 const AuthContext = createContext(null);
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem("edubatch_user");
-      return savedUser ? JSON.parse(savedUser) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [token, setToken] = useState(() => localStorage.getItem("edubatch_token") || null);
-  const [loading, setLoading] = useState(true);
+const readStoredUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem(USER_KEY)) || null;
+  } catch {
+    return null;
+  }
+};
 
-  // Logout handler
+export const homePathFor = (role) =>
+  role === "admin" ? "/admin" : role === "teacher" ? "/teacher" : "/student";
+
+// Pages each role may open. Used to decide where to send someone after login.
+const ROLE_PATHS = {
+  admin: ["/admin", "/enrollments", "/attendance", "/payments", "/notices"],
+  teacher: ["/teacher", "/enrollments", "/attendance", "/notices"],
+  student: ["/student", "/attendance", "/payments", "/notices"],
+};
+
+// Return to the page that asked for login — but only if this role can open it
+export const postLoginPath = (role, fromPath) => {
+  const allowed = ROLE_PATHS[role] || [];
+  if (fromPath && allowed.some((p) => fromPath === p || fromPath.startsWith(`${p}/`))) {
+    return fromPath;
+  }
+  return homePathFor(role);
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(readStoredUser);
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  // Only block the UI on first load if there is a stored session to verify
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)));
+
+  const saveSession = (nextUser, nextToken) => {
+    localStorage.setItem(TOKEN_KEY, nextToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+    setToken(nextToken);
+    setUser(nextUser);
+  };
+
   const logout = useCallback(() => {
-    localStorage.removeItem("edubatch_token");
-    localStorage.removeItem("edubatch_user");
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);
   }, []);
 
-  // Listen to cross-component / axios logout events
   useEffect(() => {
-    const handleForceLogout = () => {
-      logout();
-    };
-    window.addEventListener("edubatch-logout", handleForceLogout);
-    return () => window.removeEventListener("edubatch-logout", handleForceLogout);
+    window.addEventListener("edubatch-logout", logout);
+    return () => window.removeEventListener("edubatch-logout", logout);
   }, [logout]);
 
-  // Check auth and hydrate user on mount
+  // Re-validate a stored session once on load
   useEffect(() => {
-    const hydrateUser = async () => {
-      const storedToken = localStorage.getItem("edubatch_token");
-      if (!storedToken) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const response = await api.get("/auth/me");
-        if (response.data.success && response.data.data.user) {
-          const freshUser = response.data.data.user;
-          setUser(freshUser);
-          localStorage.setItem("edubatch_user", JSON.stringify(freshUser));
-        } else {
-          logout();
-        }
-      } catch (err) {
-        console.error("Session revalidation failed:", err.message);
-        logout();
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    hydrateUser();
+    if (!localStorage.getItem(TOKEN_KEY)) return;
+    api
+      .get("/auth/me")
+      .then((res) => {
+        const freshUser = res.data.data.user;
+        setUser(freshUser);
+        localStorage.setItem(USER_KEY, JSON.stringify(freshUser));
+      })
+      .catch((err) => {
+        // 401s are already handled by the axios interceptor. If the API is just
+        // unreachable, keep the stored session instead of logging the user out.
+        if (err.response?.status === 403) logout();
+      })
+      .finally(() => setLoading(false));
   }, [logout]);
 
-  // Login action
   const login = async (email, password) => {
     try {
-      const response = await api.post("/auth/login", { email, password });
-      const { user: loggedInUser, token: receivedToken } = response.data.data;
-
-      localStorage.setItem("edubatch_token", receivedToken);
-      localStorage.setItem("edubatch_user", JSON.stringify(loggedInUser));
-
-      setToken(receivedToken);
-      setUser(loggedInUser);
-
-      return { success: true, user: loggedInUser };
+      const res = await api.post("/auth/login", { email, password });
+      const { user: nextUser, token: nextToken } = res.data.data;
+      saveSession(nextUser, nextToken);
+      return nextUser;
     } catch (error) {
-      const message =
-        error.response?.data?.message || "Failed to log in. Please check your credentials.";
-      throw new Error(message);
+      throw new Error(error.response?.data?.message || "Couldn't log in. Check your email and password.", {
+        cause: error,
+      });
     }
   };
 
-  // Register action
-  const register = async (userData) => {
+  const register = async (payload) => {
     try {
-      const response = await api.post("/auth/register", userData);
-      const { user: registeredUser, token: receivedToken } = response.data.data;
-
-      localStorage.setItem("edubatch_token", receivedToken);
-      localStorage.setItem("edubatch_user", JSON.stringify(registeredUser));
-
-      setToken(receivedToken);
-      setUser(registeredUser);
-
-      return { success: true, user: registeredUser };
+      const res = await api.post("/auth/register", payload);
+      const { user: nextUser, token: nextToken } = res.data.data;
+      saveSession(nextUser, nextToken);
+      return nextUser;
     } catch (error) {
-      const message =
-        error.response?.data?.message || "Registration failed. Please check your input.";
-      throw new Error(message);
+      throw new Error(error.response?.data?.message || "Couldn't create the account. Try again.", {
+        cause: error,
+      });
     }
   };
 
-  const value = {
-    user,
-    token,
-    loading,
-    isAuthenticated: !!token && !!user,
-    login,
-    register,
-    logout,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{ user, token, loading, isAuthenticated: Boolean(token && user), login, register, logout }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!context) throw new Error("useAuth must be used inside AuthProvider");
   return context;
 };
-
-export default AuthContext;

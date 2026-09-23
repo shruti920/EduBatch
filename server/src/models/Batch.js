@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 
+const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 const batchSchema = new mongoose.Schema(
   {
     name: {
@@ -11,67 +13,46 @@ const batchSchema = new mongoose.Schema(
     },
     subject: {
       type: String,
-      required: [true, "Subject or discipline is required"],
+      required: [true, "Subject is required"],
       trim: true,
       maxlength: [100, "Subject cannot exceed 100 characters"],
     },
-    description: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    startDate: {
-      type: Date,
-      default: null,
-    },
-    endDate: {
-      type: Date,
-      default: null,
-    },
+    description: { type: String, trim: true, default: "" },
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
     schedule: {
       days: {
         type: [String],
         enum: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-        default: ["Mon", "Wed", "Fri"],
+        default: [],
       },
-      startTime: {
-        type: String,
-        trim: true,
-        default: "07:00",
-      },
-      endTime: {
-        type: String,
-        trim: true,
-        default: "09:30",
-      },
-      venue: {
-        type: String,
-        trim: true,
-        default: "Hall 3 (Auditorium)",
-      },
+      startTime: { type: String, trim: true, match: [TIME_REGEX, "Use HH:MM (24h)"] },
+      endTime: { type: String, trim: true, match: [TIME_REGEX, "Use HH:MM (24h)"] },
+      venue: { type: String, trim: true, default: "" },
     },
     capacity: {
       type: Number,
-      required: [true, "Batch capacity is required"],
-      min: [1, "Batch capacity must be at least 1"],
-      max: [500, "Batch capacity cannot exceed 500"],
+      required: [true, "Capacity is required"],
+      min: [1, "Capacity must be at least 1"],
+      max: [500, "Capacity cannot exceed 500"],
     },
+    // Stored in INR; converted to paise only when creating a Razorpay order
     fee: {
       type: Number,
-      required: [true, "Batch fee is required"],
-      min: [0, "Batch fee cannot be negative"],
+      required: [true, "Fee is required"],
+      min: [0, "Fee cannot be negative"],
     },
     teacher: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Assigned faculty lead is required"],
+      required: [true, "A teacher must be assigned"],
       index: true,
     },
     status: {
       type: String,
       enum: {
         values: ["upcoming", "active", "archived"],
-        message: "Status must be either upcoming, active, or archived",
+        message: "Status must be upcoming, active, or archived",
       },
       default: "upcoming",
       index: true,
@@ -79,25 +60,22 @@ const batchSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Batch creator reference is required"],
+      required: true,
     },
-    isArchived: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
+    // Derived from status (see pre-validate hook). Kept as a field so existing
+    // queries stay simple; it can never drift from status.
+    isArchived: { type: Boolean, default: false, index: true },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Compound indexes for high-throughput queries
+batchSchema.pre("validate", function () {
+  this.isArchived = this.status === "archived";
+});
+
 batchSchema.index({ teacher: 1, status: 1 });
-batchSchema.index({ status: 1, isArchived: 1 });
 batchSchema.index({ createdAt: -1 });
 
-// Helper to remove internal fields in JSON output
 batchSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.__v;

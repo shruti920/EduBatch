@@ -1,334 +1,245 @@
 import Batch from "../models/Batch.js";
 import User from "../models/User.js";
+import Enrollment from "../models/Enrollment.js";
 import AppError from "../utils/AppError.js";
+import escapeRegex from "../utils/escapeRegex.js";
+
+const TEACHER_FIELDS = "name email phone avatar";
+
+const withRelations = (query) =>
+  query.populate("teacher", TEACHER_FIELDS).populate("createdBy", "name email");
+
+// Active seat count per batch, as a { batchId: count } map
+const countActiveSeats = async (batchIds) => {
+  const rows = await Enrollment.aggregate([
+    { $match: { batch: { $in: batchIds }, isActive: true } },
+    { $group: { _id: "$batch", count: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [r._id.toString(), r.count]));
+};
+
+const withSeatCounts = async (batches) => {
+  const seatMap = await countActiveSeats(batches.map((b) => b._id));
+  return batches.map((b) => {
+    const enrolledCount = seatMap[b._id.toString()] || 0;
+    return {
+      ...b.toJSON(),
+      enrolledCount,
+      seatsRemaining: Math.max(0, b.capacity - enrolledCount),
+      isFull: enrolledCount >= b.capacity,
+    };
+  });
+};
+
+const assertAssignableTeacher = async (teacherId) => {
+  const teacher = await User.findById(teacherId);
+  if (!teacher) throw new AppError("Selected teacher was not found.", 404);
+  if (teacher.role !== "teacher") throw new AppError("Selected user is not a teacher.", 400);
+  if (!teacher.isActive) {
+    throw new AppError("Selected teacher's account is deactivated.", 400);
+  }
+};
 
 /**
- * Get all batches with role-aware scoping, status filters, and search.
+ * GET /batches
+ * admin   → all batches, filterable by status/search/subject
+ * teacher → only batches assigned to them
+ * student → only batches they are actively enrolled in
  */
 export const getAllBatches = async (req, res, next) => {
   try {
-    const { status, search, subject } = req.query;
+    const { status = "all", search, subject } = req.query;
+    const { role, _id: userId } = req.user;
     const query = {};
 
-    // 1. Role-based scoping
-    if (req.user.role === "teacher") {
-      query.teacher = req.user._id;
-      query.isArchived = false;
-    } else if (req.user.role === "student") {
-      query.isArchived = false;
-      query.status = { $in: ["active", "upcoming"] };
-    } else {
-      // Admin scoping
-      if (status && status !== "all") {
-        query.status = status;
-        if (status === "archived") {
-          query.isArchived = true;
-        } else {
-          query.isArchived = false;
-        }
-      } else if (!status || status === "all") {
-        // By default show all non-archived in 'all' view, unless specifically archived tab
-        query.isArchived = false;
-      }
+    if (role === "teacher") {
+      query.teacher = userId;
+      query.status = { $ne: "archived" };
+    } else if (role === "student") {
+      const enrolledBatchIds = await Enrollment.find({ student: userId, isActive: true }).distinct(
+        "batch"
+      );
+      query._id = { $in: enrolledBatchIds };
+      query.status = { $ne: "archived" };
+    } else if (status === "all") {
+      query.status = { $ne: "archived" };
+    } else if (["upcoming", "active", "archived"].includes(status)) {
+      query.status = status;
     }
 
-    // 2. Search filter
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { subject: { $regex: search, $options: "i" } },
-      ];
+      const pattern = new RegExp(escapeRegex(search.trim()), "i");
+      query.$or = [{ name: pattern }, { subject: pattern }];
+    }
+    if (subject && subject !== "all") {
+      query.subject = new RegExp(`^${escapeRegex(subject.trim())}$`, "i");
     }
 
-    // 3. Subject filter
-    if (subject && subject !== "All Disciplines") {
-      query.subject = { $regex: subject, $options: "i" };
-    }
+    const batches = await withRelations(Batch.find(query)).sort({ createdAt: -1 });
 
-    // Execute query
-    const batches = await Batch.find(query)
-      .populate("teacher", "name email phone avatar")
-      .populate("createdBy", "name email")
-      .sort({ createdAt: -1 });
-
-    // Compute status counts for Admin navigation tabs
-    let counts = { all: 0, active: 0, upcoming: 0, archived: 0 };
-    if (req.user.role === "admin") {
-      const [allCount, activeCount, upcomingCount, archivedCount] = await Promise.all([
-        Batch.countDocuments({ isArchived: false }),
-        Batch.countDocuments({ status: "active", isArchived: false }),
-        Batch.countDocuments({ status: "upcoming", isArchived: false }),
-        Batch.countDocuments({ isArchived: true }),
+    // Status tab counts and subject options are only needed on the admin batch list
+    let counts = null;
+    if (role === "admin") {
+      const [all, active, upcoming, archived, subjects] = await Promise.all([
+        Batch.countDocuments({ status: { $ne: "archived" } }),
+        Batch.countDocuments({ status: "active" }),
+        Batch.countDocuments({ status: "upcoming" }),
+        Batch.countDocuments({ status: "archived" }),
+        Batch.distinct("subject"),
       ]);
-      counts = {
-        all: allCount,
-        active: activeCount,
-        upcoming: upcomingCount,
-        archived: archivedCount,
-      };
-    } else if (req.user.role === "teacher") {
-      const [allCount, activeCount, upcomingCount] = await Promise.all([
-        Batch.countDocuments({ teacher: req.user._id, isArchived: false }),
-        Batch.countDocuments({ teacher: req.user._id, status: "active", isArchived: false }),
-        Batch.countDocuments({ teacher: req.user._id, status: "upcoming", isArchived: false }),
-      ]);
-      counts = { all: allCount, active: activeCount, upcoming: upcomingCount, archived: 0 };
+      counts = { all, active, upcoming, archived, subjects: subjects.sort() };
     }
 
     res.status(200).json({
       success: true,
-      message: "Batches retrieved successfully.",
-      data: {
-        batches,
-        counts,
-      },
+      data: { batches: await withSeatCounts(batches), counts },
+      message: "Batches retrieved.",
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get single batch by ID with populated teacher and createdBy details.
- */
+// GET /batches/:id — teachers only see their own; students only batches they're enrolled in
 export const getBatchById = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const batch = await withRelations(Batch.findById(req.params.id));
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
-    const batch = await Batch.findById(id)
-      .populate("teacher", "name email phone avatar")
-      .populate("createdBy", "name email");
+    const { role, _id: userId } = req.user;
 
-    if (!batch) {
-      return next(new AppError("Batch not found with the requested ID.", 404));
+    if (role === "teacher" && batch.teacher?._id.toString() !== userId.toString()) {
+      return next(new AppError("You can only view batches assigned to you.", 403));
+    }
+    if (role === "student") {
+      const enrolled = await Enrollment.exists({ student: userId, batch: batch._id, isActive: true });
+      if (!enrolled) return next(new AppError("You are not enrolled in this batch.", 403));
     }
 
-    // Teacher authorization check: can only view own batches
-    if (
-      req.user.role === "teacher" &&
-      batch.teacher?._id?.toString() !== req.user._id.toString()
-    ) {
-      return next(
-        new AppError("You do not have permission to view this cohort's details.", 403)
-      );
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Batch details retrieved.",
-      data: {
-        batch,
-      },
-    });
+    const [withCounts] = await withSeatCounts([batch]);
+    res.status(200).json({ success: true, data: { batch: withCounts }, message: "Batch retrieved." });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Create a new academic batch (Admin only).
- * Validates that teacher exists and has 'teacher' role.
- */
+// POST /batches (admin)
 export const createBatch = async (req, res, next) => {
   try {
-    const { name, subject, description, startDate, endDate, schedule, capacity, fee, teacher, status } = req.body;
-
-    // Verify assigned teacher exists, is active, and has 'teacher' role
-    const teacherUser = await User.findById(teacher);
-    if (!teacherUser) {
-      return next(new AppError("Assigned faculty lead not found.", 404));
-    }
-    if (teacherUser.role !== "teacher") {
-      return next(
-        new AppError("Assigned user must possess the 'teacher' faculty role.", 400)
-      );
-    }
-    if (!teacherUser.isActive) {
-      return next(
-        new AppError("Cannot assign a deactivated faculty member to a new cohort.", 400)
-      );
-    }
-
-    // Verify date sequence if both dates provided
-    if (startDate && endDate) {
-      if (new Date(endDate) < new Date(startDate)) {
-        return next(new AppError("End date cannot precede the start date.", 400));
-      }
-    }
+    await assertAssignableTeacher(req.body.teacher);
 
     const batch = await Batch.create({
-      name,
-      subject,
-      description: description || "",
-      startDate: startDate || null,
-      endDate: endDate || null,
-      schedule: schedule || undefined,
-      capacity,
-      fee,
-      teacher,
-      status: status || "upcoming",
+      ...req.body,
+      startDate: req.body.startDate || null,
+      endDate: req.body.endDate || null,
       createdBy: req.user._id,
-      isArchived: false,
     });
 
-    const populatedBatch = await Batch.findById(batch._id)
-      .populate("teacher", "name email phone avatar")
-      .populate("createdBy", "name email");
+    const populated = await withRelations(Batch.findById(batch._id));
+    const [withCounts] = await withSeatCounts([populated]);
 
-    res.status(201).json({
-      success: true,
-      message: "New batch registered successfully in curriculum ledger.",
-      data: {
-        batch: populatedBatch,
-      },
-    });
+    res.status(201).json({ success: true, data: { batch: withCounts }, message: "Batch created." });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Update an existing batch (Admin only).
- */
+// PUT /batches/:id (admin)
 export const updateBatch = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const batch = await Batch.findById(id);
+    const batch = await Batch.findById(req.params.id);
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
-    if (!batch) {
-      return next(new AppError("Batch not found with the requested ID.", 404));
+    const updates = { ...req.body };
+
+    if (updates.teacher && updates.teacher !== batch.teacher.toString()) {
+      await assertAssignableTeacher(updates.teacher);
     }
 
-    // If teacher is being modified, validate teacher
-    if (req.body.teacher && req.body.teacher !== batch.teacher.toString()) {
-      const teacherUser = await User.findById(req.body.teacher);
-      if (!teacherUser) {
-        return next(new AppError("Assigned faculty lead not found.", 404));
-      }
-      if (teacherUser.role !== "teacher") {
+    // Capacity can't drop below the number of students already enrolled
+    if (updates.capacity !== undefined) {
+      const enrolled = await Enrollment.countDocuments({ batch: batch._id, isActive: true });
+      if (updates.capacity < enrolled) {
         return next(
-          new AppError("Assigned user must possess the 'teacher' faculty role.", 400)
-        );
-      }
-      if (!teacherUser.isActive) {
-        return next(
-          new AppError("Cannot assign a deactivated faculty member to a cohort.", 400)
+          new AppError(
+            `Capacity can't be lower than the ${enrolled} students already enrolled. Drop students first.`,
+            400
+          )
         );
       }
     }
 
-    // Verify date sequence
-    const effectiveStartDate = req.body.startDate !== undefined ? req.body.startDate : batch.startDate;
-    const effectiveEndDate = req.body.endDate !== undefined ? req.body.endDate : batch.endDate;
-    if (effectiveStartDate && effectiveEndDate) {
-      if (new Date(effectiveEndDate) < new Date(effectiveStartDate)) {
-        return next(new AppError("End date cannot precede the start date.", 400));
-      }
+    // Validate the date range against whichever values will be saved
+    const start = updates.startDate !== undefined ? updates.startDate : batch.startDate;
+    const end = updates.endDate !== undefined ? updates.endDate : batch.endDate;
+    if (start && end && new Date(end) < new Date(start)) {
+      return next(new AppError("End date cannot be before start date.", 400));
     }
 
-    // Apply updates
-    Object.assign(batch, req.body);
-    await batch.save();
+    if (updates.startDate === "") updates.startDate = null;
+    if (updates.endDate === "") updates.endDate = null;
 
-    const updatedBatch = await Batch.findById(id)
-      .populate("teacher", "name email phone avatar")
-      .populate("createdBy", "name email");
+    batch.set(updates);
+    await batch.save(); // pre-validate hook keeps isArchived in sync with status
 
-    res.status(200).json({
-      success: true,
-      message: "Batch configuration updated successfully.",
-      data: {
-        batch: updatedBatch,
-      },
-    });
+    const populated = await withRelations(Batch.findById(batch._id));
+    const [withCounts] = await withSeatCounts([populated]);
+
+    res.status(200).json({ success: true, data: { batch: withCounts }, message: "Batch updated." });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Quick status update (upcoming | active | archived) (Admin only).
- */
+// PATCH /batches/:id/status (admin)
 export const updateBatchStatus = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const { status } = req.body;
+    const batch = await Batch.findById(req.params.id);
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
-    const batch = await Batch.findById(id);
-    if (!batch) {
-      return next(new AppError("Batch not found.", 404));
-    }
-
-    batch.status = status;
-    if (status === "archived") {
-      batch.isArchived = true;
-    } else {
-      batch.isArchived = false;
-    }
-
+    batch.status = req.body.status;
     await batch.save();
 
-    const updatedBatch = await Batch.findById(id)
-      .populate("teacher", "name email phone avatar");
+    const populated = await withRelations(Batch.findById(batch._id));
+    const [withCounts] = await withSeatCounts([populated]);
 
     res.status(200).json({
       success: true,
-      message: `Batch status changed to ${status}.`,
-      data: {
-        batch: updatedBatch,
-      },
+      data: { batch: withCounts },
+      message: `Batch marked as ${req.body.status}.`,
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Soft archive batch (Admin only).
- */
+// DELETE /batches/:id (admin) — soft archive, enrollments and attendance are kept
 export const archiveBatch = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const batch = await Batch.findById(req.params.id);
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
-    const batch = await Batch.findById(id);
-    if (!batch) {
-      return next(new AppError("Batch not found.", 404));
-    }
-
-    batch.isArchived = true;
     batch.status = "archived";
     await batch.save();
 
     res.status(200).json({
       success: true,
-      message: "Batch archived successfully in ledger. Historical records preserved.",
-      data: {
-        id: batch._id,
-        isArchived: true,
-        status: "archived",
-      },
+      data: { id: batch._id, status: batch.status },
+      message: "Batch archived.",
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Helper to fetch active faculty leads for dropdown selection (Admin only).
- */
-export const getFacultyList = async (req, res, next) => {
+// GET /batches/meta/teachers (admin) — options for the batch form
+export const getTeacherOptions = async (req, res, next) => {
   try {
     const teachers = await User.find({ role: "teacher", isActive: true })
-      .select("name email phone avatar")
+      .select("name email")
       .sort({ name: 1 });
 
-    res.status(200).json({
-      success: true,
-      message: "Active faculty leads retrieved.",
-      data: {
-        teachers,
-      },
-    });
+    res.status(200).json({ success: true, data: { teachers }, message: "Teachers retrieved." });
   } catch (error) {
     next(error);
   }

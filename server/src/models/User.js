@@ -10,59 +10,41 @@ const userSchema = new mongoose.Schema(
       minlength: [2, "Name must be at least 2 characters"],
       maxlength: [100, "Name cannot exceed 100 characters"],
     },
+    // Format is validated by Zod at the API boundary; the schema only enforces uniqueness
     email: {
       type: String,
       required: [true, "Email is required"],
       unique: true,
       lowercase: true,
       trim: true,
-      match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-        "Please provide a valid email address",
-      ],
-      index: true,
     },
     password: {
       type: String,
       required: [true, "Password is required"],
-      minlength: [6, "Password must be at least 6 characters"],
-      select: false, // Security: never return password by default
+      select: false,
     },
     role: {
       type: String,
       enum: {
         values: ["admin", "teacher", "student"],
-        message: "Role must be either admin, teacher, or student",
+        message: "Role must be admin, teacher, or student",
       },
       default: "student",
       index: true,
     },
-    phone: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    avatar: {
-      type: String,
-      default: "",
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-      index: true,
-    },
+    phone: { type: String, trim: true, default: "" },
+    avatar: { type: String, default: "" },
+    isActive: { type: Boolean, default: true },
+    // Notices posted after this moment count as unread (null = everything unread)
+    noticesSeenAt: { type: Date, default: null },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Method to verify candidate password against hashed password
-userSchema.methods.matchPassword = async function (candidatePassword) {
-  return await comparePassword(candidatePassword, this.password);
+userSchema.methods.matchPassword = function (candidatePassword) {
+  return comparePassword(candidatePassword, this.password);
 };
 
-// Clean JSON representation (ensure password never leaks)
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;

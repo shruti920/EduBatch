@@ -30,12 +30,12 @@ const attendanceSchema = new mongoose.Schema(
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
-      required: [true, "Cohort batch reference is required"],
+      required: [true, "Batch is required"],
       index: true,
     },
     date: {
       type: Date,
-      required: [true, "Attendance register date is required"],
+      required: [true, "Date is required"],
     },
     records: {
       type: [recordSchema],
@@ -61,10 +61,10 @@ const attendanceSchema = new mongoose.Schema(
   }
 );
 
-// Compound unique index: strictly one attendance register per batch per calendar date
+// One attendance document per batch per calendar day
 attendanceSchema.index({ batch: 1, date: 1 }, { unique: true });
 
-// Performance indexes for historical queries and candidate roll lookups
+// History lookups and "my attendance" lookups
 attendanceSchema.index({ batch: 1, createdAt: -1 });
 attendanceSchema.index({ "records.student": 1 });
 

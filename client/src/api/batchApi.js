@@ -1,57 +1,17 @@
 import api from "./axios";
 
-/**
- * Fetch all batches with optional query filters (status, search, subject)
- */
-export const getBatches = async (params = {}) => {
-  const response = await api.get("/batches", { params });
-  return response.data.data;
-};
+// Admin: all batches (filter by status/search/subject). Teacher: own. Student: enrolled.
+export const getBatches = async (params = {}) => (await api.get("/batches", { params })).data.data;
 
-/**
- * Fetch single batch details by ID
- */
-export const getBatchById = async (id) => {
-  const response = await api.get(`/batches/${id}`);
-  return response.data.data.batch;
-};
+export const getBatchById = async (id) => (await api.get(`/batches/${id}`)).data.data.batch;
 
-/**
- * Create a new academic batch (Admin only)
- */
-export const createBatch = async (batchData) => {
-  const response = await api.post("/batches", batchData);
-  return response.data.data.batch;
-};
+export const createBatch = async (payload) => (await api.post("/batches", payload)).data.data.batch;
 
-/**
- * Update an existing batch (Admin only)
- */
-export const updateBatch = async (id, batchData) => {
-  const response = await api.put(`/batches/${id}`, batchData);
-  return response.data.data.batch;
-};
+export const updateBatch = async (id, payload) => (await api.put(`/batches/${id}`, payload)).data.data.batch;
 
-/**
- * Quick status update (upcoming | active | archived) (Admin only)
- */
-export const updateBatchStatus = async (id, status) => {
-  const response = await api.patch(`/batches/${id}/status`, { status });
-  return response.data.data.batch;
-};
+export const updateBatchStatus = async (id, status) =>
+  (await api.patch(`/batches/${id}/status`, { status })).data.data.batch;
 
-/**
- * Soft-archive a batch (Admin only)
- */
-export const archiveBatch = async (id) => {
-  const response = await api.delete(`/batches/${id}`);
-  return response.data.data;
-};
+export const archiveBatch = async (id) => (await api.delete(`/batches/${id}`)).data.data;
 
-/**
- * Get active faculty list for Admin dropdown selection
- */
-export const getFacultyList = async () => {
-  const response = await api.get("/batches/meta/faculty");
-  return response.data.data.teachers;
-};
+export const getTeacherOptions = async () => (await api.get("/batches/meta/teachers")).data.data.teachers;

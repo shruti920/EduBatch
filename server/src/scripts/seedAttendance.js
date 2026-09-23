@@ -15,7 +15,7 @@ const seedAttendance = async () => {
     await connectDB();
     console.log("Connected to MongoDB for attendance seeding...");
 
-    // 1. Fetch teacher and cohorts
+    // 1. Fetch teacher and batches
     const teacher = await User.findOne({ email: "teacher@edubatch.com" });
     if (!teacher) {
       console.error("Faculty lead (teacher@edubatch.com) not found. Run seedUsers.js first.");
@@ -34,7 +34,7 @@ const seedAttendance = async () => {
     const jeeEnrollments = await Enrollment.find({ batch: jeeBatch._id, isActive: true }).populate("student");
     const neetEnrollments = await Enrollment.find({ batch: neetBatch._id, isActive: true }).populate("student");
 
-    console.log(`Found ${jeeEnrollments.length} candidates in JEE batch, ${neetEnrollments.length} in NEET batch.`);
+    console.log(`Found ${jeeEnrollments.length} students in JEE batch, ${neetEnrollments.length} in NEET batch.`);
 
     const now = new Date();
 

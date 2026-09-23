@@ -5,19 +5,14 @@ const enrollmentSchema = new mongoose.Schema(
     student: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Candidate student reference is required"],
-      index: true,
+      required: [true, "Student is required"],
     },
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
-      required: [true, "Cohort batch reference is required"],
-      index: true,
+      required: [true, "Batch is required"],
     },
-    enrolledAt: {
-      type: Date,
-      default: Date.now,
-    },
+    enrolledAt: { type: Date, default: Date.now },
     paymentStatus: {
       type: String,
       enum: {
@@ -27,30 +22,23 @@ const enrollmentSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
+    // Filled in by the payments module once a Razorpay payment is verified
     payment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
       default: null,
     },
-    isActive: {
-      type: Boolean,
-      default: true,
-      index: true,
-    },
+    // Soft drop: history is kept, the seat is released
+    isActive: { type: Boolean, default: true },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Compound unique index: A student can only have ONE enrollment record per batch
+// One enrollment record per student per batch (re-enrolling reactivates it)
 enrollmentSchema.index({ student: 1, batch: 1 }, { unique: true });
-
-// Compound indexes for rapid capacity checks and roster lookups
 enrollmentSchema.index({ batch: 1, isActive: 1 });
 enrollmentSchema.index({ student: 1, isActive: 1 });
 
-// Clean JSON representation
 enrollmentSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.__v;

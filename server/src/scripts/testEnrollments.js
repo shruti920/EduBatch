@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./_assertSafeDb.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -87,8 +88,8 @@ const runEnrollmentTests = async () => {
         batch: tempBatch._id.toString(),
       }),
     });
-    console.assert(dupRes.status === 400, `Expected 400 for duplicate enrollment, got ${dupRes.status}`);
-    console.log("✓ TEST 2 PASSED: Duplicate enrollment blocked with 400 Bad Request.");
+    console.assert(dupRes.status === 409, `Expected 409 for duplicate enrollment, got ${dupRes.status}`);
+    console.log("✓ TEST 2 PASSED: Duplicate enrollment blocked with 409 Conflict.");
 
     // TEST 3: Attempt to enroll a teacher account as student -> MUST FAIL WITH 400
     const invalidRoleRes = await fetch(`${baseUrl}`, {
@@ -105,7 +106,7 @@ const runEnrollmentTests = async () => {
     console.assert(invalidRoleRes.status === 400, `Expected 400 for non-student, got ${invalidRoleRes.status}`);
     console.log("✓ TEST 3 PASSED: Enrolling a non-student rejected with 400.");
 
-    // TEST 4: Hard capacity limit check: Batch capacity is 1, already has 1. Student 2 attempts to enroll -> MUST FAIL WITH 400
+    // TEST 4: Hard capacity limit check: Batch capacity is 1, already has 1. Student 2 attempts to enroll -> MUST FAIL WITH 409
     const capRes = await fetch(`${baseUrl}`, {
       method: "POST",
       headers: {
@@ -118,8 +119,8 @@ const runEnrollmentTests = async () => {
       }),
     });
     const capData = await capRes.json();
-    console.assert(capRes.status === 400, `Expected 400 on capacity limit, got ${capRes.status}`);
-    console.assert(capData.message.includes("Capacity reached"), "Message must explain capacity limit");
+    console.assert(capRes.status === 409, `Expected 409 on capacity limit, got ${capRes.status}`);
+    console.assert(capData.message.includes("is full"), "Message must explain capacity limit");
     console.log(`✓ TEST 4 PASSED: Hard capacity limit enforced. (${capData.message})`);
 
     // TEST 5: Student queries own enrollments (GET /my)
@@ -169,11 +170,11 @@ const runEnrollmentTests = async () => {
     if (tempBatch) await Batch.findByIdAndDelete(tempBatch._id);
     if (tempStudent1) {
       await Enrollment.deleteMany({ student: tempStudent1._id });
-      await User.findByIdAndDelete(tempStudent1._id);
+      await User.deleteOne({ _id: tempStudent1._id });
     }
     if (tempStudent2) {
       await Enrollment.deleteMany({ student: tempStudent2._id });
-      await User.findByIdAndDelete(tempStudent2._id);
+      await User.deleteOne({ _id: tempStudent2._id });
     }
     server.close();
     await mongoose.connection.close();
