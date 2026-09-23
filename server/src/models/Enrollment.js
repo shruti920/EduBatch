@@ -28,6 +28,10 @@ const enrollmentSchema = new mongoose.Schema(
       ref: "Payment",
       default: null,
     },
+    // Rupees actually received for this seat, frozen at the moment it was paid
+    // (online: the Razorpay amount; offline: the batch fee when the admin marked it paid).
+    // Revenue is summed from this, so editing a batch fee later never rewrites history.
+    amountPaid: { type: Number, default: null, min: 0 },
     // Soft drop: history is kept, the seat is released
     isActive: { type: Boolean, default: true },
   },

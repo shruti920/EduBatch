@@ -13,6 +13,7 @@ import {
   StatStrip,
 } from "../../components/ui";
 import { getAdminDashboard } from "../../api/dashboardApi";
+import UpcomingClasses from "../../components/dashboard/UpcomingClasses";
 import { useApi } from "../../hooks/useApi";
 import { formatINR } from "../../utils/format";
 
@@ -61,7 +62,11 @@ const AdminDashboard = () => {
                 value: counts.activeBatches,
                 note: `${counts.upcomingBatches} upcoming`,
               },
-              { label: "Fees collected", value: formatINR(fees.collected), note: `${fees.paidCount} paid` },
+              {
+                label: "Fees collected",
+                value: formatINR(fees.collected),
+                note: `${formatINR(fees.collectedOnline)} online · ${formatINR(fees.collectedOffline)} offline`,
+              },
               {
                 label: "Fees pending",
                 value: formatINR(fees.pending),
@@ -69,6 +74,13 @@ const AdminDashboard = () => {
                 tone: fees.pendingCount ? "attention" : undefined,
               },
             ]}
+          />
+
+          <UpcomingClasses
+            title="Today's classes"
+            sessions={data.upcomingClasses}
+            showTeacher
+            emptyText="No more classes scheduled for today."
           />
 
           <div className="grid gap-6 lg:grid-cols-3">

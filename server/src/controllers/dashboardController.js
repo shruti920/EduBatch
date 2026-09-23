@@ -3,6 +3,30 @@ import User from "../models/User.js";
 import Enrollment from "../models/Enrollment.js";
 import Attendance from "../models/Attendance.js";
 import { todayKey } from "../utils/date.js";
+import { upcomingClasses } from "../utils/schedule.js";
+
+/**
+ * Revenue = money actually received, frozen per enrollment in `amountPaid`.
+ * Includes students who paid and were later dropped (the money was still received).
+ * Older records without amountPaid fall back to the Razorpay amount, then the batch fee.
+ */
+const revenueSummary = async () => {
+  const paid = await Enrollment.find({ paymentStatus: "paid" })
+    .select("amountPaid payment batch")
+    .populate("payment", "amount status")
+    .populate("batch", "fee")
+    .lean();
+
+  const summary = { collected: 0, online: 0, offline: 0, paidCount: paid.length };
+  paid.forEach((e) => {
+    const isOnline = Boolean(e.payment && e.payment.status === "paid");
+    const amount = e.amountPaid ?? (isOnline ? e.payment.amount / 100 : e.batch?.fee || 0);
+    summary.collected += amount;
+    if (isOnline) summary.online += amount;
+    else summary.offline += amount;
+  });
+  return summary;
+};
 
 const ATTENDED = ["present", "late"];
 
@@ -33,7 +57,7 @@ export const getAdminDashboard = async (req, res, next) => {
   try {
     const today = todayKey();
 
-    const [batches, archivedBatches, students, teachers, enrollments, todaySessions] =
+    const [batches, archivedBatches, students, teachers, enrollments, todaySessions, revenue] =
       await Promise.all([
         Batch.find({ status: { $ne: "archived" } })
           .populate("teacher", "name")
@@ -43,23 +67,28 @@ export const getAdminDashboard = async (req, res, next) => {
         User.countDocuments({ role: "teacher", isActive: true }),
         Enrollment.find({ isActive: true }).populate("batch", "fee status"),
         Attendance.find({ date: today }).select("batch"),
+        revenueSummary(),
       ]);
 
     const seatMap = await seatMapFor(batches.map((b) => b._id));
     const batchRows = batches.map((b) => withSeats(b, seatMap));
     const activeBatches = batchRows.filter((b) => b.status === "active");
 
-    // Fees are computed from each enrollment's batch fee (INR)
-    const fees = { collected: 0, pending: 0, paidCount: 0, pendingCount: 0, waivedCount: 0 };
+    // Collected = money received (frozen amounts). Pending = what active seats still owe at today's fee.
+    const fees = {
+      collected: revenue.collected,
+      collectedOnline: revenue.online,
+      collectedOffline: revenue.offline,
+      paidCount: revenue.paidCount,
+      pending: 0,
+      pendingCount: 0,
+      waivedCount: 0,
+    };
     enrollments.forEach((e) => {
-      const fee = e.batch?.fee || 0;
-      if (e.paymentStatus === "paid") {
-        fees.collected += fee;
-        fees.paidCount += 1;
-      } else if (e.paymentStatus === "pending") {
-        fees.pending += fee;
+      if (e.paymentStatus === "pending") {
+        fees.pending += e.batch?.fee || 0;
         fees.pendingCount += 1;
-      } else {
+      } else if (e.paymentStatus === "waived") {
         fees.waivedCount += 1;
       }
     });
@@ -88,6 +117,8 @@ export const getAdminDashboard = async (req, res, next) => {
           pendingToday: activeBatches.filter((b) => !markedToday.has(b._id.toString())).length,
         },
         batches: batchRows,
+        // Admin sees the whole institute's classes for today
+        upcomingClasses: upcomingClasses(batches, { days: 1, limit: 12 }),
       },
       message: "Admin dashboard retrieved.",
     });
@@ -126,6 +157,7 @@ export const getTeacherDashboard = async (req, res, next) => {
         activeBatches: activeBatches.length,
         markedToday: activeBatches.filter((b) => b.markedToday).length,
         batches: batchRows,
+        upcomingClasses: upcomingClasses(batches, { days: 7, limit: 6 }),
       },
       message: "Teacher dashboard retrieved.",
     });
@@ -191,6 +223,10 @@ export const getStudentDashboard = async (req, res, next) => {
           pendingAmount: pending.reduce((sum, e) => sum + (e.batch?.fee || 0), 0),
         },
         enrollments: rows,
+        upcomingClasses: upcomingClasses(
+          enrollments.map((e) => e.batch),
+          { days: 7, limit: 6 }
+        ),
       },
       message: "Student dashboard retrieved.",
     });

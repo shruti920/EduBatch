@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import Payment from "../models/Payment.js";
 import Enrollment from "../models/Enrollment.js";
+import { sendInBackground, sendPaymentReceiptEmail } from "./emailService.js";
 
 const hmacHex = (secret, message) => crypto.createHmac("sha256", secret).update(message).digest("hex");
 
@@ -48,8 +49,19 @@ export const markPaymentPaid = async (payment, { razorpayPaymentId, signature = 
   // Money was received, so the enrollment is paid even if an admin changed it meanwhile
   await Enrollment.updateOne(
     { _id: current.enrollment },
-    { paymentStatus: "paid", payment: current._id }
+    { paymentStatus: "paid", payment: current._id, amountPaid: current.amount / 100 }
   );
+
+  // Receipt email only on the call that actually flipped the payment to paid,
+  // so verify + webhook + sync racing each other never send it twice
+  if (updated) {
+    sendInBackground(async () => {
+      const full = await Payment.findById(current._id)
+        .populate("student", "name email")
+        .populate("batch", "name");
+      if (full?.student?.email) await sendPaymentReceiptEmail(full);
+    });
+  }
 
   return { payment: current, changed: Boolean(updated) };
 };
