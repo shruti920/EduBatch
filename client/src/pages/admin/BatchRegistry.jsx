@@ -13,6 +13,7 @@ import {
   Clock,
   Sparkles,
   Building,
+  GraduationCap,
 } from "lucide-react";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import BatchCard from "../../components/batches/BatchCard";
@@ -23,6 +24,7 @@ import {
   archiveBatch,
   getFacultyList,
 } from "../../api/batchApi";
+import { getAllEnrollments } from "../../api/enrollmentApi";
 import { useAuth } from "../../context/AuthContext";
 
 const BatchRegistry = () => {
@@ -32,6 +34,7 @@ const BatchRegistry = () => {
   const [batches, setBatches] = useState([]);
   const [counts, setCounts] = useState({ all: 0, active: 0, upcoming: 0, archived: 0 });
   const [teachers, setTeachers] = useState([]);
+  const [enrollmentMap, setEnrollmentMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -44,7 +47,7 @@ const BatchRegistry = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBatch, setEditingBatch] = useState(null);
 
-  // Fetch batches from backend
+  // Fetch batches and active enrollments together
   const fetchBatchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -54,11 +57,28 @@ const BatchRegistry = () => {
         ...(searchTerm && { search: searchTerm }),
         ...(selectedSubject !== "All Disciplines" && { subject: selectedSubject }),
       };
-      const data = await getBatches(params);
-      setBatches(data.batches || []);
-      if (data.counts) {
-        setCounts(data.counts);
+
+      const [batchRes, enrollmentRes] = await Promise.all([
+        getBatches(params),
+        getAllEnrollments().catch(() => ({ enrollments: [] })),
+      ]);
+
+      const loadedBatches = batchRes.batches || [];
+      setBatches(loadedBatches);
+      if (batchRes.counts) {
+        setCounts(batchRes.counts);
       }
+
+      // Build real enrollment count map
+      const eMap = {};
+      const activeEnrollments = enrollmentRes.enrollments || [];
+      activeEnrollments.forEach((e) => {
+        if (e.batch?._id) {
+          const bId = e.batch._id.toString();
+          eMap[bId] = (eMap[bId] || 0) + 1;
+        }
+      });
+      setEnrollmentMap(eMap);
     } catch (err) {
       setError(err.response?.data?.message || err.message || "Failed to load batches.");
     } finally {
@@ -118,19 +138,33 @@ const BatchRegistry = () => {
       `"${b.teacher?.name || ""}"`,
       `"${b.schedule?.days?.join(",") || ""} ${b.schedule?.startTime}-${b.schedule?.endTime}"`,
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `EduBatch_Registry_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      "download",
+      `EduBatch_Registry_${new Date().toISOString().slice(0, 10)}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Aggregated totals for top metrics
+  // Real aggregated totals for top metrics
   const totalCapacity = batches.reduce((acc, b) => acc + (b.capacity || 0), 0);
-  const totalEstimatedRevenue = batches.reduce((acc, b) => acc + (b.fee * (b.capacity || 0)), 0);
+  const totalEnrolled = batches.reduce((acc, b) => acc + (enrollmentMap[b._id] || 0), 0);
+  const utilizationPercent =
+    totalCapacity > 0 ? Math.round((totalEnrolled / totalCapacity) * 1000) / 10 : 0;
+  const hardLockedCount = batches.filter(
+    (b) => (enrollmentMap[b._id] || 0) >= b.capacity
+  ).length;
+  const totalEstimatedRevenue = batches.reduce(
+    (acc, b) => acc + b.fee * (enrollmentMap[b._id] || 0),
+    0
+  );
 
   return (
     <DashboardLayout>
@@ -139,11 +173,10 @@ const BatchRegistry = () => {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-[#E5E3DC]">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-mono tracking-wider uppercase text-[#5A6275]">
-              <span>LEDGER GROUP: BATCH-MGMT-2025</span>
+              <span>CURRICULUM REGISTRY DESK</span>
               <span>•</span>
-              <span className="text-[#2F6E4F] font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#2F6E4F]"></span>
-                SYNCED WITH MONGODB REPLICA
+              <span className="px-1.5 py-0.5 rounded bg-[#EDF7F2] text-[#1E4934] border border-[#A3D4BC] font-semibold">
+                HARD CAPACITY LOCK ACTIVE
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1B2A4A] tracking-tight mt-1">
@@ -190,16 +223,23 @@ const BatchRegistry = () => {
                 <Users size={14} className="text-[#64748B]" />
               </div>
               <div className="mt-2 flex items-baseline gap-1.5">
-                <span className="text-3xl font-serif font-bold text-[#1B2A4A]">412</span>
-                <span className="text-xs font-mono text-[#64748B]">/ {totalCapacity || 480} Capacity</span>
+                <span className="text-3xl font-serif font-bold text-[#1B2A4A]">
+                  {totalEnrolled}
+                </span>
+                <span className="text-xs font-mono text-[#64748B]">
+                  / {totalCapacity} Capacity
+                </span>
               </div>
               <div className="w-full bg-[#EFECE6] h-1.5 rounded-full overflow-hidden mt-3">
-                <div className="bg-[#1B2A4A] h-full rounded-full" style={{ width: "85.8%" }}></div>
+                <div
+                  className="bg-[#1B2A4A] h-full rounded-full transition-all"
+                  style={{ width: `${Math.min(100, utilizationPercent)}%` }}
+                ></div>
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-[#E5E3DC] flex items-center justify-between text-[11px] font-mono">
-              <span className="text-[#5A6275]">Aggregate Utilization:</span>
-              <span className="font-bold text-[#1B2A4A]">85.8%</span>
+              <span className="text-[#5A6275]">Utilization:</span>
+              <span className="font-bold text-[#1B2A4A]">{utilizationPercent}%</span>
             </div>
           </div>
 
@@ -211,16 +251,18 @@ const BatchRegistry = () => {
                 <Lock size={14} className="text-[#B23A32]" />
               </div>
               <div className="mt-2 flex items-baseline gap-1.5">
-                <span className="text-3xl font-serif font-bold text-[#B23A32]">3</span>
+                <span className="text-3xl font-serif font-bold text-[#B23A32]">
+                  {hardLockedCount}
+                </span>
                 <span className="text-xs font-sans text-[#5A6275]">Batches at 100% cap</span>
               </div>
               <div className="text-[11px] font-sans text-[#5A6275] mt-1 leading-snug">
-                Server rejected 14 overflow application requests today.
+                Atomic database guards prevent admission overflow.
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-[#E5E3DC] flex items-center justify-between text-[11px] font-mono">
               <span className="text-[#B23A32] font-semibold">Zero Overselling</span>
-              <span className="text-[#2F6E4F] font-bold">LOCKED</span>
+              <span className="text-[#2F6E4F] font-bold">ENFORCED</span>
             </div>
           </div>
 
@@ -228,21 +270,21 @@ const BatchRegistry = () => {
           <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-                <span>EXPECTED FEE LEDGER</span>
+                <span>ENROLLED TUITION VALUE</span>
                 <IndianRupee size={14} className="text-[#D99A2B]" />
               </div>
               <div className="mt-2 flex items-baseline gap-1">
                 <span className="text-3xl font-serif font-bold text-[#1B2A4A]">
-                  ₹{(totalEstimatedRevenue || 18440000).toLocaleString("en-IN")}
+                  ₹{totalEstimatedRevenue.toLocaleString("en-IN")}
                 </span>
               </div>
               <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-                Razorpay Reconciled: ₹1,58,60,000 (86%)
+                Across {totalEnrolled} admitted candidates
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-[#E5E3DC] flex items-center justify-between text-[11px] font-mono">
-              <span className="text-[#2F6E4F]">86% Realized</span>
-              <span className="text-[#5A6275]">Term 1 Quota</span>
+              <span className="text-[#2F6E4F]">Verified Ledger</span>
+              <span className="text-[#5A6275]">{batches.length} Cohorts</span>
             </div>
           </div>
 
@@ -250,20 +292,22 @@ const BatchRegistry = () => {
           <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-                <span>FACULTY UTILIZATION</span>
+                <span>FACULTY LEADS</span>
                 <Users size={14} className="text-[#1B2A4A]" />
               </div>
               <div className="mt-2 flex items-baseline gap-1.5">
-                <span className="text-3xl font-serif font-bold text-[#1B2A4A]">18 / 20</span>
-                <span className="text-xs font-sans text-[#5A6275]">Active Leads</span>
+                <span className="text-3xl font-serif font-bold text-[#1B2A4A]">
+                  {teachers.length}
+                </span>
+                <span className="text-xs font-sans text-[#5A6275]">Active Faculty</span>
               </div>
               <div className="text-[11px] font-sans text-[#5A6275] mt-1">
-                Avg lecture load: 16.5 hrs/week per senior faculty member.
+                Authorized for batch roll calls and roster oversight.
               </div>
             </div>
             <div className="mt-3 pt-2 border-t border-[#E5E3DC] flex items-center justify-between text-[11px] font-mono">
-              <span className="text-[#2F6E4F]">Normal Workload</span>
-              <span className="text-[#1B2A4A] font-bold">OPTIMAL</span>
+              <span className="text-[#2F6E4F]">Assigned Status</span>
+              <span className="text-[#1B2A4A] font-bold">ACTIVE</span>
             </div>
           </div>
         </div>
@@ -282,10 +326,10 @@ const BatchRegistry = () => {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-colors shrink-0 cursor-pointer ${
                   activeTab === tab.key
-                    ? "bg-[#1B2A4A] text-white shadow-xs"
-                    : "text-[#5A6275] hover:text-[#1B2A4A] hover:bg-[#F7F6F2]"
+                    ? "bg-[#1B2A4A] text-white"
+                    : "text-[#5A6275] hover:bg-[#F7F6F2] hover:text-[#1B2A4A]"
                 }`}
               >
                 {tab.label}
@@ -293,40 +337,37 @@ const BatchRegistry = () => {
             ))}
           </div>
 
-          {/* Search and Subject Dropdown */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-xs text-[#5A6275] font-mono">
-              <span>SUBJECT:</span>
-              <select
-                value={selectedSubject}
-                onChange={(e) => setSelectedSubject(e.target.value)}
-                className="bg-[#F7F6F2] border border-[#E5E3DC] rounded px-2 py-1 text-xs text-[#22242B] font-sans focus:outline-none focus:border-[#1B2A4A]"
-              >
-                <option>All Disciplines</option>
-                <option>Physics</option>
-                <option>Math</option>
-                <option>Chemistry</option>
-                <option>Complete PCM</option>
-              </select>
-            </div>
-
+          {/* Search Box & Discipline Filter */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <div className="relative">
               <Search
                 size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#64748B]"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5A6275]"
               />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Filter cohort..."
-                className="pl-8 pr-3 py-1 bg-[#F7F6F2] border border-[#E5E3DC] rounded text-xs text-[#22242B] placeholder-[#64748B] focus:outline-none focus:border-[#1B2A4A] focus:bg-white w-40 sm:w-48 transition-colors"
+                placeholder="Search batch or subject..."
+                className="pl-8 pr-3 py-1.5 bg-[#FCFBF8] border border-[#E5E3DC] rounded text-xs text-[#22242B] focus:outline-hidden focus:border-[#1B2A4A] w-full sm:w-56"
               />
             </div>
+
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="px-2.5 py-1.5 bg-[#FCFBF8] border border-[#E5E3DC] rounded text-xs text-[#22242B] font-mono focus:outline-hidden focus:border-[#1B2A4A]"
+            >
+              <option value="All Disciplines">All Disciplines</option>
+              <option value="Physics">Physics</option>
+              <option value="Mathematics">Mathematics</option>
+              <option value="Chemistry">Chemistry</option>
+              <option value="Biology">Biology</option>
+            </select>
           </div>
         </div>
 
-        {/* Split Grid: Batch Cards Feed + Right-Hand Operational Panels */}
+        {/* Main Content: Batches Grid & Right Control Sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Feed of Batches (2 Columns) */}
           <div className="lg:col-span-2 space-y-4">
@@ -362,7 +403,10 @@ const BatchRegistry = () => {
               batches.map((batch) => (
                 <BatchCard
                   key={batch._id}
-                  batch={batch}
+                  batch={{
+                    ...batch,
+                    enrolledCount: enrollmentMap[batch._id] ?? 0,
+                  }}
                   isAdmin={isAdmin}
                   onEdit={handleEdit}
                   onStatusChange={handleStatusChange}
@@ -372,69 +416,8 @@ const BatchRegistry = () => {
             )}
           </div>
 
-          {/* Right Column: Physical Hall Allocations, Collision Guard & Load Matrix */}
+          {/* Right Column: Registry Integrity & Faculty Leads */}
           <div className="space-y-4">
-            {/* Physical Hall Allocations Card */}
-            <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-              <div className="flex items-center justify-between pb-3 border-b border-[#E5E3DC]">
-                <div className="text-xs font-mono uppercase font-semibold text-[#1B2A4A] flex items-center gap-1.5">
-                  <Building size={14} className="text-[#D99A2B]" />
-                  <span>PHYSICAL HALL ALLOCATIONS</span>
-                </div>
-                <span className="text-[10px] font-mono text-[#5A6275]">SHIFT: MORNING</span>
-              </div>
-
-              <div className="mt-3 space-y-2.5 text-xs font-sans">
-                <div className="p-2.5 border border-[#E5E3DC] rounded bg-[#FCFBF8]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#1B2A4A]">Hall 3 (Auditorium)</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#FDF1F0] text-[#B23A32]">
-                      100% FULL
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-                    Max Cap: 45 | Current: 45
-                  </div>
-                </div>
-
-                <div className="p-2.5 border border-[#E5E3DC] rounded bg-[#FCFBF8]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#1B2A4A]">Lab 2B (Biology)</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#FEF8EC] text-[#A67119]">
-                      95% (2 OPEN)
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-                    Max Cap: 40 | Current: 38
-                  </div>
-                </div>
-
-                <div className="p-2.5 border border-[#E5E3DC] rounded bg-[#FCFBF8]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#1B2A4A]">Room 104 (East Block)</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#EDF7F2] text-[#1E4934]">
-                      80% (7 OPEN)
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-                    Max Cap: 35 | Current: 28
-                  </div>
-                </div>
-
-                <div className="p-2.5 border border-[#E5E3DC] rounded bg-[#FCFBF8]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#1B2A4A]">Hall 1 (Lecture Theatre)</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#EDF7F2] text-[#1E4934]">
-                      28% (36 OPEN)
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-[#5A6275] mt-1">
-                    Max Cap: 50 | Current: 14
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Server-Side Capacity Lock Box */}
             <div className="p-3.5 bg-[#FEF8EC] border border-[#F3D28E] rounded-lg text-xs">
               <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#A67119] uppercase">
@@ -442,81 +425,82 @@ const BatchRegistry = () => {
                 <span>SERVER-SIDE CAPACITY LOCK</span>
               </div>
               <p className="text-[11px] text-[#22242B] font-sans mt-1.5 leading-relaxed">
-                Atomic transactions inside the MongoDB registration endpoint guarantee that when{" "}
+                Database integrity checks strictly reject admissions when{" "}
                 <code className="bg-[#FAF2DF] px-1 py-0.5 rounded font-mono text-[10px]">
-                  current_enrolled == max_capacity
+                  enrolled &gt;= capacity
                 </code>
-                , candidate registration requests automatically fault to waitlist.
+                . This guarantees strict quota discipline across all cohorts.
               </p>
             </div>
 
-            {/* Timetable Collision Guard */}
+            {/* Active Faculty Leads */}
             <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
               <div className="flex items-center justify-between pb-3 border-b border-[#E5E3DC]">
                 <span className="text-xs font-mono uppercase font-semibold text-[#1B2A4A]">
-                  TIMETABLE COLLISION GUARD
+                  ASSIGNED FACULTY LEADS
                 </span>
-                <CheckCircle2 size={15} className="text-[#2F6E4F]" />
+                <span className="text-xs font-mono text-[#5A6275]">
+                  {teachers.length} Active
+                </span>
               </div>
-              <div className="p-2.5 bg-[#EDF7F2] border border-[#A3D4BC] rounded mt-3 text-xs">
-                <div className="font-mono text-[10px] font-bold text-[#1E4934] uppercase flex items-center gap-1">
-                  <span>ZERO SCHEDULE OVERLAPS</span>
-                </div>
-                <div className="text-[11px] text-[#22242B] mt-1">
-                  All active cohorts checked against 5 physical venues and faculty calendars. No overlapping bookings detected.
-                </div>
-              </div>
-              <div className="mt-3 space-y-1.5 text-[11px] font-mono text-[#5A6275]">
-                <div className="flex items-center justify-between">
-                  <span>Weekly Lecture Hours:</span>
-                  <span className="text-[#1B2A4A] font-bold">312.5 hrs</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Unallocated Hall Slots:</span>
-                  <span className="text-[#1B2A4A] font-bold">18 slots</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Faculty Overload Flags:</span>
-                  <span className="text-[#2F6E4F] font-bold">0 warnings</span>
-                </div>
+              <div className="mt-3 space-y-2 text-xs">
+                {teachers.length === 0 ? (
+                  <div className="py-4 text-center text-[#5A6275] text-xs">
+                    No faculty accounts registered yet.
+                  </div>
+                ) : (
+                  teachers.map((t) => (
+                    <div
+                      key={t._id}
+                      className="flex items-center justify-between p-2 border border-[#E5E3DC] rounded bg-[#FCFBF8]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-[#1B2A4A] text-white text-[10px] font-mono font-bold flex items-center justify-center">
+                          {t.name
+                            ?.split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-[#1B2A4A]">{t.name}</div>
+                          <div className="text-[10px] text-[#5A6275]">{t.email}</div>
+                        </div>
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#EDF7F2] text-[#1E4934] border border-[#A3D4BC]">
+                        FACULTY
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
-            {/* Faculty Load Matrix */}
+            {/* Curriculum Breakdown */}
             <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
               <div className="flex items-center justify-between pb-3 border-b border-[#E5E3DC]">
                 <span className="text-xs font-mono uppercase font-semibold text-[#1B2A4A]">
-                  FACULTY LOAD MATRIX
+                  COHORT STATUS DISTRIBUTION
                 </span>
-                <button className="text-[10px] font-mono text-[#1B2A4A] font-semibold hover:underline">
-                  VIEW ALL
-                </button>
+                <CheckCircle2 size={15} className="text-[#2F6E4F]" />
               </div>
-              <div className="mt-3 space-y-2 text-xs">
-                <div className="flex items-center justify-between p-2 border border-[#E5E3DC] rounded">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded bg-[#1B2A4A] text-white text-[10px] font-mono font-bold flex items-center justify-center">
-                      AS
-                    </div>
-                    <div>
-                      <div className="font-semibold text-[#1B2A4A]">Prof. Alok Shrivastava</div>
-                      <div className="text-[10px] text-[#5A6275]">Physics • JEE Adv</div>
-                    </div>
-                  </div>
-                  <span className="font-mono text-[11px] font-bold text-[#1B2A4A]">18h / wk</span>
+              <div className="mt-3 space-y-2 text-[11px] font-mono text-[#5A6275]">
+                <div className="flex items-center justify-between">
+                  <span>Active Cohorts:</span>
+                  <span className="text-[#1B2A4A] font-bold">{counts.active}</span>
                 </div>
-
-                <div className="flex items-center justify-between p-2 border border-[#E5E3DC] rounded">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded bg-[#2F6E4F] text-white text-[10px] font-mono font-bold flex items-center justify-center">
-                      VS
-                    </div>
-                    <div>
-                      <div className="font-semibold text-[#1B2A4A]">Dr. Vandana Sen</div>
-                      <div className="text-[10px] text-[#5A6275]">Zoology • NEET Target</div>
-                    </div>
-                  </div>
-                  <span className="font-mono text-[11px] font-bold text-[#1B2A4A]">21h / wk</span>
+                <div className="flex items-center justify-between">
+                  <span>Upcoming Cohorts:</span>
+                  <span className="text-[#1B2A4A] font-bold">{counts.upcoming}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Archived Cohorts:</span>
+                  <span className="text-[#1B2A4A] font-bold">{counts.archived}</span>
+                </div>
+                <div className="pt-2 border-t border-[#E5E3DC] flex items-center justify-between">
+                  <span>Total Managed:</span>
+                  <span className="text-[#1B2A4A] font-bold">{counts.all}</span>
                 </div>
               </div>
             </div>

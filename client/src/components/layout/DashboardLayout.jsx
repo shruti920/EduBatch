@@ -44,9 +44,9 @@ const DashboardLayout = ({ children }) => {
     },
     {
       name: "Batch Registry",
-      path: user?.role === "admin" ? "/admin/batches" : "/batches",
+      path: "/admin/batches",
       icon: CalendarDays,
-      roles: ["admin", "teacher", "student"],
+      roles: ["admin"],
     },
     {
       name: "Enrollment & Roster",
@@ -55,27 +55,9 @@ const DashboardLayout = ({ children }) => {
       roles: ["admin", "teacher"],
     },
     {
-      name: "Fee Ledger & Razorpay",
-      path: "/fees",
-      icon: CreditCard,
-      roles: ["admin", "student"],
-    },
-    {
       name: "Attendance Register",
       path: "/attendance",
       icon: ClipboardCheck,
-      roles: ["admin", "teacher", "student"],
-    },
-    {
-      name: "Official Bulletins",
-      path: "/bulletins",
-      icon: Bell,
-      roles: ["admin", "teacher", "student"],
-    },
-    {
-      name: "Settings & Security",
-      path: "/settings",
-      icon: Settings,
       roles: ["admin", "teacher", "student"],
     },
   ];

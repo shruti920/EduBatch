@@ -105,7 +105,10 @@ const seedEnrollments = async () => {
         await Enrollment.create(e);
         console.log(`Enrolled student ${e.student} into batch ${e.batch}`);
       } else {
-        console.log(`Enrollment already exists for student ${e.student}`);
+        existing.isActive = true;
+        existing.paymentStatus = e.paymentStatus;
+        await existing.save();
+        console.log(`Updated enrollment to active for student ${e.student}`);
       }
     }
 

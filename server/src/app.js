@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth.js";
 import batchRoutes from "./routes/batches.js";
 import enrollmentRoutes from "./routes/enrollments.js";
 import attendanceRoutes from "./routes/attendance.js";
+import dashboardRoutes from "./routes/dashboard.js";
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.use("/api/v1/auth", authLimiter, authRoutes);
 app.use("/api/v1/batches", batchRoutes);
 app.use("/api/v1/enrollments", enrollmentRoutes);
 app.use("/api/v1/attendance", attendanceRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 // Handle unhandled routes (404)
 app.all("{*path}", (req, res, next) => {

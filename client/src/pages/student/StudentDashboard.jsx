@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   CalendarDays,
   CreditCard,
@@ -16,18 +16,24 @@ import {
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import { useAuth } from "../../context/AuthContext";
 import { getMyEnrollments } from "../../api/enrollmentApi";
+import { getMyAttendance } from "../../api/attendanceApi";
 
 const StudentDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [enrollments, setEnrollments] = useState([]);
+  const [attendanceData, setAttendanceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    getMyEnrollments()
-      .then((data) => setEnrollments(data || []))
+    Promise.all([getMyEnrollments(), getMyAttendance()])
+      .then(([enrData, attData]) => {
+        setEnrollments(enrData || []);
+        setAttendanceData(attData || null);
+      })
       .catch((err) =>
-        setError(err.response?.data?.message || err.message || "Failed to load enrollments.")
+        setError(err.response?.data?.message || err.message || "Failed to load dashboard data.")
       )
       .finally(() => setLoading(false));
   }, []);
@@ -36,6 +42,10 @@ const StudentDashboard = () => {
   const hasPendingFees = enrollments.some((e) => e.paymentStatus === "pending");
   const allFeesPaid = totalEnrolled > 0 && enrollments.every((e) => e.paymentStatus === "paid" || e.paymentStatus === "waived");
 
+  const overallAttRate = attendanceData?.overall?.percentage ?? 100;
+  const totalAttSessions = attendanceData?.overall?.totalSessions ?? 0;
+  const attendedSessions = (attendanceData?.overall?.present ?? 0) + (attendanceData?.overall?.late ?? 0);
+
   const formatTime12h = (time24) => {
     if (!time24) return "";
     const [h, m] = time24.split(":").map(Number);
@@ -43,6 +53,15 @@ const StudentDashboard = () => {
     const hour12 = h % 12 || 12;
     return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${suffix}`;
   };
+
+  // Build a lookup for batch attendance rates
+  const batchAttendanceMap = {};
+  if (attendanceData?.batches) {
+    attendanceData.batches.forEach((b) => {
+      const bId = typeof b.batch === "object" ? b.batch._id : b.batch;
+      batchAttendanceMap[bId] = b.percentage;
+    });
+  }
 
   return (
     <DashboardLayout>
@@ -67,21 +86,17 @@ const StudentDashboard = () => {
 
           <div className="flex items-center gap-2">
             <Link
-              to="/batches"
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F6F2] text-[#1B2A4A] border border-[#E5E3DC] text-xs font-semibold rounded shadow-2xs transition-colors cursor-pointer"
+              to="/attendance"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1B2A4A] hover:bg-[#253963] text-white text-xs font-semibold rounded shadow-xs transition-colors cursor-pointer"
             >
-              <CalendarDays size={14} />
-              <span>Browse All Batches</span>
+              <ClipboardCheck size={14} className="text-[#D99A2B]" />
+              <span>Attendance Ledger</span>
             </Link>
-            <button className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#1B2A4A] hover:bg-[#253963] text-white text-xs font-semibold rounded shadow-xs transition-colors cursor-pointer">
-              <CreditCard size={14} className="text-[#D99A2B]" />
-              <span>Tuition Fee Portal</span>
-            </button>
           </div>
         </div>
 
-        {/* 4 Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 3 Stat Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
             <div className="text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
               ENROLLED BATCHES
@@ -95,13 +110,26 @@ const StudentDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-              CUMULATIVE ATTENDANCE
+          {/* Cumulative Attendance Card - Clickable to /attendance */}
+          <div
+            onClick={() => navigate("/attendance")}
+            className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs hover:border-[#1B2A4A] transition-colors cursor-pointer"
+          >
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold flex items-center justify-between">
+              <span>CUMULATIVE ATTENDANCE</span>
+              <ArrowRight size={12} className="text-[#5A6275]" />
             </div>
-            <div className="text-3xl font-serif font-bold text-[#2F6E4F] mt-1">96.4%</div>
+            <div
+              className={`text-3xl font-serif font-bold mt-1 ${
+                overallAttRate >= 75 ? "text-[#2F6E4F]" : "text-[#B23A32]"
+              }`}
+            >
+              {loading ? "..." : `${overallAttRate}%`}
+            </div>
             <div className="text-[11px] text-[#5A6275] font-mono mt-2">
-              27 / 28 Sessions Attended
+              {totalAttSessions > 0
+                ? `${attendedSessions} / ${totalAttSessions} Sessions Attended`
+                : "No lectures recorded yet"}
             </div>
           </div>
 
@@ -119,16 +147,6 @@ const StudentDashboard = () => {
             <div className="text-[11px] text-[#2F6E4F] font-mono mt-2 flex items-center gap-1 font-semibold">
               <ShieldCheck size={13} />
               <span>{hasPendingFees ? "Payment Due on Ledger" : "Tuition Verified"}</span>
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#E5E3DC] rounded-lg p-4 shadow-2xs">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-[#5A6275] font-semibold">
-              ACADEMIC BULLETINS
-            </div>
-            <div className="text-3xl font-serif font-bold text-[#1B2A4A] mt-1">1</div>
-            <div className="text-[11px] text-[#D99A2B] font-mono mt-2">
-              Dussehra Revision Schedule
             </div>
           </div>
         </div>
@@ -159,15 +177,9 @@ const StudentDashboard = () => {
               <div className="font-serif font-bold text-[#1B2A4A] text-base">
                 No Cohorts Enrolled Yet
               </div>
-              <p className="text-xs text-[#5A6275] mt-1">
-                You have not been admitted into any batches. Explore the curriculum ledger to browse available courses.
+              <p className="text-xs text-[#5A6275] mt-1 max-w-md mx-auto">
+                You have not been admitted into any course cohorts yet. Please contact your academic administrator or admissions desk for cohort enrollment.
               </p>
-              <Link
-                to="/batches"
-                className="mt-4 inline-block px-4 py-2 bg-[#1B2A4A] hover:bg-[#253963] text-white rounded text-xs font-semibold"
-              >
-                Browse Course Catalog →
-              </Link>
             </div>
           ) : (
             <div className="mt-4 space-y-3">
@@ -177,6 +189,7 @@ const StudentDashboard = () => {
 
                 const isPaid = enr.paymentStatus === "paid";
                 const isPending = enr.paymentStatus === "pending";
+                const cohortRate = batchAttendanceMap[batch._id] ?? 100;
 
                 return (
                   <div
@@ -242,8 +255,12 @@ const StudentDashboard = () => {
                         <span className="text-[10px] font-mono uppercase text-[#5A6275] block">
                           ATTENDANCE RATE
                         </span>
-                        <span className="font-semibold text-[#2F6E4F] font-mono text-[11px]">
-                          96.4% (Exemplary)
+                        <span
+                          className={`font-semibold font-mono text-[11px] ${
+                            cohortRate >= 75 ? "text-[#2F6E4F]" : "text-[#B23A32]"
+                          }`}
+                        >
+                          {cohortRate}% ({cohortRate >= 75 ? "Exemplary" : "Deficit"})
                         </span>
                       </div>
                     </div>

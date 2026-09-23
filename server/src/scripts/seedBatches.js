@@ -99,9 +99,23 @@ const seedBatches = async () => {
         await Batch.create(batchData);
         console.log(`Created cohort: "${batchData.name}"`);
       } else {
-        console.log(`Cohort already exists: "${batchData.name}"`);
+        await Batch.findByIdAndUpdate(existing._id, {
+          status: batchData.status,
+          isArchived: false,
+          capacity: batchData.capacity,
+          fee: batchData.fee,
+          schedule: batchData.schedule,
+        });
+        console.log(`Updated cohort to active: "${batchData.name}"`);
       }
     }
+
+    // Clean up temporary leftover batches
+    await Batch.deleteMany({
+      name: {
+        $nin: demoBatches.map((b) => b.name),
+      },
+    });
 
     console.log("Batch seeding complete!");
     process.exit(0);

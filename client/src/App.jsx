@@ -10,6 +10,7 @@ import TeacherDashboard from "./pages/teacher/TeacherDashboard";
 import StudentDashboard from "./pages/student/StudentDashboard";
 import BatchRegistry from "./pages/admin/BatchRegistry";
 import EnrollmentRoster from "./pages/admin/EnrollmentRoster";
+import AttendanceRegister from "./pages/attendance/AttendanceRegister";
 
 // Root redirect handler based on authenticated role
 const RootRedirect = () => {
@@ -73,7 +74,7 @@ function App() {
           <Route
             path="/batches"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin"]}>
                 <BatchRegistry />
               </ProtectedRoute>
             }
@@ -83,6 +84,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["admin", "teacher"]}>
                 <EnrollmentRoster />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance"
+            element={
+              <ProtectedRoute allowedRoles={["admin", "teacher", "student"]}>
+                <AttendanceRegister />
               </ProtectedRoute>
             }
           />

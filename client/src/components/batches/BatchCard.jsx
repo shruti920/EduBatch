@@ -42,8 +42,8 @@ const BatchCard = ({
     return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${suffix}`;
   };
 
-  // Capacity calculations (placeholder enrolled ratio for Module 2)
-  const enrolledCount = batch.enrolledCount !== undefined ? batch.enrolledCount : Math.min(batch.capacity, Math.floor(batch.capacity * 0.85));
+  // Real capacity calculations
+  const enrolledCount = batch.enrolledCount !== undefined ? batch.enrolledCount : 0;
   const capacityPercent = Math.min(100, Math.round((enrolledCount / batch.capacity) * 100));
   const seatsRemaining = Math.max(0, batch.capacity - enrolledCount);
   const isFull = seatsRemaining === 0;
@@ -204,15 +204,10 @@ const BatchCard = ({
           </button>
           <button
             type="button"
+            onClick={() => navigate(`/attendance?batchId=${batch._id}`)}
             className="px-2.5 py-1 bg-white hover:bg-[#F7F6F2] text-[#1B2A4A] border border-[#E5E3DC] rounded text-[11px] font-semibold transition-colors cursor-pointer"
           >
             Attendance Register
-          </button>
-          <button
-            type="button"
-            className="px-2.5 py-1 bg-white hover:bg-[#F7F6F2] text-[#5A6275] border border-[#E5E3DC] rounded text-[11px] font-semibold transition-colors cursor-pointer"
-          >
-            Post Notice
           </button>
         </div>
 
