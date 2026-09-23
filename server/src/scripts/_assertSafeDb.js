@@ -11,3 +11,7 @@ if (process.env.MONGO_URI_TEST) {
 } else {
   console.warn("MONGO_URI_TEST is not set: tests will use MONGO_URI (your main database).");
 }
+
+// Tests never send real email: messages go to the in-memory outbox instead
+process.env.EMAIL_TRANSPORT = "log";
+process.env.EMAIL_LOG_QUIET = "true";

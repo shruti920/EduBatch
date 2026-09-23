@@ -15,6 +15,10 @@ import TeacherDashboard from "./pages/teacher/TeacherDashboard";
 import StudentDashboard from "./pages/student/StudentDashboard";
 import AttendanceRegister from "./pages/attendance/AttendanceRegister";
 import Payments from "./pages/payments/Payments";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import Profile from "./pages/profile/Profile";
+import Users from "./pages/admin/Users";
 
 const RootRedirect = () => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -46,10 +50,22 @@ const App = () => (
                 </PublicOnlyRoute>
               }
             />
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicOnlyRoute>
+                  <ForgotPassword />
+                </PublicOnlyRoute>
+              }
+            />
+            {/* Not PublicOnly: the emailed link must work even if another account is signed in */}
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
 
             <Route path="/admin" element={guard(["admin"], <AdminDashboard />)} />
             <Route path="/admin/batches" element={guard(["admin"], <BatchRegistry />)} />
+            <Route path="/admin/users" element={guard(["admin"], <Users />)} />
+            <Route path="/profile" element={guard(["admin", "teacher", "student"], <Profile />)} />
             <Route path="/enrollments" element={guard(["admin", "teacher"], <EnrollmentRoster />)} />
             <Route path="/attendance" element={guard(["admin", "teacher", "student"], <AttendanceRegister />)} />
             <Route path="/payments" element={guard(["admin", "student"], <Payments />)} />

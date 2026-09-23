@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "./_assertSafeDb.js";
+import { check } from "./_check.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -29,10 +30,10 @@ const runTests = async () => {
       }),
     });
     const regData = await regRes.json();
-    console.assert(regRes.status === 201, `Expected 201, got ${regRes.status}`);
-    console.assert(regData.success === true, "Expected success true");
-    console.assert(regData.data.user.role === "student", "Role must be student");
-    console.assert(!regData.data.user.password, "Password must not be returned");
+    check(regRes.status === 201, `Expected 201, got ${regRes.status}`);
+    check(regData.success === true, "Expected success true");
+    check(regData.data.user.role === "student", "Role must be student");
+    check(!regData.data.user.password, "Password must not be returned");
     console.log("✓ TEST 1 PASSED: Valid student registration");
 
     // TEST 2: Attempt privilege escalation during register
@@ -48,8 +49,8 @@ const runTests = async () => {
       }),
     });
     const privData = await privRes.json();
-    console.assert(privRes.status === 201, `Expected 201, got ${privRes.status}`);
-    console.assert(privData.data.user.role === "student", "Privilege escalation bypassed!");
+    check(privRes.status === 201, `Expected 201, got ${privRes.status}`);
+    check(privData.data.user.role === "student", "Privilege escalation bypassed!");
     console.log("✓ TEST 2 PASSED: Privilege escalation blocked (forced to student)");
 
     // TEST 3: Duplicate email registration
@@ -63,8 +64,8 @@ const runTests = async () => {
       }),
     });
     const dupData = await dupRes.json();
-    console.assert(dupRes.status === 409, `Expected 409, got ${dupRes.status}`);
-    console.assert(dupData.success === false, "Expected success false");
+    check(dupRes.status === 409, `Expected 409, got ${dupRes.status}`);
+    check(dupData.success === false, "Expected success false");
     console.log("✓ TEST 3 PASSED: Duplicate email registration rejected with 409");
 
     // TEST 4: Login with valid credentials
@@ -77,9 +78,9 @@ const runTests = async () => {
       }),
     });
     const loginData = await loginRes.json();
-    console.assert(loginRes.status === 200, `Expected 200, got ${loginRes.status}`);
-    console.assert(loginData.data.user.role === "admin", "Role must be admin");
-    console.assert(!!loginData.data.token, "Token must be returned");
+    check(loginRes.status === 200, `Expected 200, got ${loginRes.status}`);
+    check(loginData.data.user.role === "admin", "Role must be admin");
+    check(!!loginData.data.token, "Token must be returned");
     const adminToken = loginData.data.token;
     console.log("✓ TEST 4 PASSED: Admin login successful with valid JWT");
 
@@ -92,7 +93,7 @@ const runTests = async () => {
         password: "WrongPassword999",
       }),
     });
-    console.assert(badLoginRes.status === 401, `Expected 401, got ${badLoginRes.status}`);
+    check(badLoginRes.status === 401, `Expected 401, got ${badLoginRes.status}`);
     console.log("✓ TEST 5 PASSED: Invalid password rejected with 401");
 
     // TEST 6: Protected /me endpoint with valid token
@@ -100,13 +101,13 @@ const runTests = async () => {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const meData = await meRes.json();
-    console.assert(meRes.status === 200, `Expected 200, got ${meRes.status}`);
-    console.assert(meData.data.user.email === "admin@edubatch.com", "Must match email");
+    check(meRes.status === 200, `Expected 200, got ${meRes.status}`);
+    check(meData.data.user.email === "admin@edubatch.com", "Must match email");
     console.log("✓ TEST 6 PASSED: Protected /me authenticated successfully");
 
     // TEST 7: Protected /me endpoint without token
     const noTokenRes = await fetch(`${baseUrl}/me`);
-    console.assert(noTokenRes.status === 401, `Expected 401, got ${noTokenRes.status}`);
+    check(noTokenRes.status === 401, `Expected 401, got ${noTokenRes.status}`);
     console.log("✓ TEST 7 PASSED: Protected /me without token rejected with 401");
 
     // TEST 8: successful logins never count toward the rate limit (reviewers switching accounts)

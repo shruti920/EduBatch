@@ -132,6 +132,23 @@ This module doesn't add data, it protects and ships what already exists.
 
 ---
 
+## Module 8a — Auth completion, Profile, Email, Users (added after gap review)
+
+The assignment email requires more than Modules 1–7 covered. See `docs/MODULE_8A_IMPLEMENTATION.md`.
+
+- [x] Refresh tokens (rotating, httpOnly), logout, logout-all, instant revocation via tokenVersion
+- [x] Forgot / reset password with emailed single-use link
+- [x] Nodemailer email service: reset, password changed, welcome, enrollment, receipt
+- [x] Profile page: name, phone, avatar, change password
+- [x] Admin Users page: create teacher/student, activate/deactivate
+- [x] Upcoming classes on dashboards; revenue from frozen amounts
+- [x] React 18 per mandatory stack
+- [x] Tests that actually fail (`check()` instead of `console.assert`) + `testAccount.js`
+
+**Checkpoint:** `npm test` → all 9 suites pass.
+
+---
+
 ## If you're behind schedule
 
 Cut in this order: Notices first, then Attendance, then dashboard polish (raw numbers are fine, skip charts). Never cut the payment signature verification or the enrollment capacity check — those are the two things a technical reviewer will specifically probe, per their own evaluation criteria.

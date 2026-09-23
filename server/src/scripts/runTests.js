@@ -27,6 +27,7 @@ const suites = [
   "testAttendance.js",
   "testPayments.js",
   "testNotices.js",
+  "testAccount.js",
 ];
 
 for (const suite of suites) {
