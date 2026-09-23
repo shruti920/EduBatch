@@ -72,6 +72,11 @@ const Login = () => {
             className={inputClass}
           />
         </Field>
+        <p className="-mt-2 text-right text-sm">
+          <Link to="/forgot-password" className="text-ink-muted underline underline-offset-2 hover:text-ink">
+            Forgot password?
+          </Link>
+        </p>
 
         <Button type="submit" className="w-full" disabled={submitting || !email || !password}>
           {submitting ? "Logging in…" : "Log in"}

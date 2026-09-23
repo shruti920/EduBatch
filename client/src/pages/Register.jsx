@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { Button, Field, Notice, PasswordInput, inputClass } from "../components/ui";
 import { useSlowFlag } from "../hooks/useUi";
 import AuthShell from "./AuthShell";
+import { PASSWORD_HINT, passwordProblem } from "../utils/validation";
 
 const EMPTY = { name: "", email: "", phone: "", password: "", confirmPassword: "" };
 
@@ -12,7 +13,8 @@ const validate = (form) => {
   if (form.name.trim().length < 2) errors.name = "Enter your full name.";
   if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) errors.email = "Enter a valid email address.";
   if (form.phone && !/^[0-9+\-\s]{7,20}$/.test(form.phone.trim())) errors.phone = "Enter a valid phone number.";
-  if (form.password.length < 6) errors.password = "Use at least 6 characters.";
+  const passwordError = passwordProblem(form.password);
+  if (passwordError) errors.password = passwordError;
   if (form.confirmPassword !== form.password) errors.confirmPassword = "Passwords don't match.";
   return errors;
 };
@@ -86,7 +88,7 @@ const Register = () => {
           {input("phone", { type: "tel", autoComplete: "tel", inputMode: "tel" })}
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Password" htmlFor="password" error={errors.password} hint="At least 6 characters">
+          <Field label="Password" htmlFor="password" error={errors.password} hint={PASSWORD_HINT}>
             {input("password", { autoComplete: "new-password" }, PasswordInput)}
           </Field>
           <Field label="Confirm password" htmlFor="confirmPassword" error={errors.confirmPassword}>

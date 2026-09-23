@@ -33,10 +33,20 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
     phone: { type: String, trim: true, default: "" },
-    avatar: { type: String, default: "" },
+    // Image URL (https). Uploads are out of MVP scope; see README.
+    avatar: { type: String, trim: true, default: "" },
     isActive: { type: Boolean, default: true },
     // Notices posted after this moment count as unread (null = everything unread)
     noticesSeenAt: { type: Date, default: null },
+
+    // --- Session / credential security ---
+    // Copied into every access token as `tv`. Bumping it revokes all access tokens at once.
+    tokenVersion: { type: Number, default: 0 },
+    passwordChangedAt: { type: Date, default: null },
+    // SHA-256 of the emailed reset token; the raw token only ever exists in the email
+    passwordResetTokenHash: { type: String, default: null, select: false, index: { sparse: true } },
+    passwordResetExpires: { type: Date, default: null, select: false },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
@@ -49,6 +59,9 @@ userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   delete obj.__v;
+  delete obj.tokenVersion;
+  delete obj.passwordResetTokenHash;
+  delete obj.passwordResetExpires;
   return obj;
 };
 
