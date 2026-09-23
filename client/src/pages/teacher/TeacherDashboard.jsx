@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import BatchCard from "../../components/batches/BatchCard";
+import UpcomingClasses from "../../components/dashboard/UpcomingClasses";
 import { EmptyState, Loading, Notice, PageHeader, Pill, Section, StatStrip } from "../../components/ui";
 import { getTeacherDashboard } from "../../api/dashboardApi";
 import { useAuth } from "../../context/AuthContext";
@@ -37,6 +38,8 @@ const TeacherDashboard = () => {
               },
             ]}
           />
+
+          <UpcomingClasses sessions={data.upcomingClasses} />
 
           {batches.length === 0 ? (
             <Section>

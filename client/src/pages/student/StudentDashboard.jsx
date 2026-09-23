@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import BatchCard from "../../components/batches/BatchCard";
+import UpcomingClasses from "../../components/dashboard/UpcomingClasses";
 import { getStudentDashboard } from "../../api/dashboardApi";
 import { useAuth } from "../../context/AuthContext";
 import { useApi } from "../../hooks/useApi";
@@ -53,6 +54,8 @@ const StudentDashboard = () => {
               },
             ]}
           />
+
+          <UpcomingClasses sessions={data.upcomingClasses} showTeacher emptyText="No classes in the next 7 days for your batches." />
 
           <Section
             title="Latest notices"
