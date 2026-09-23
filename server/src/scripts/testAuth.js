@@ -1,0 +1,128 @@
+import "dotenv/config";
+import mongoose from "mongoose";
+import app from "../app.js";
+import connectDB from "../config/db.js";
+import User from "../models/User.js";
+
+const runTests = async () => {
+  await connectDB();
+
+  const server = app.listen(0);
+  const port = server.address().port;
+  const baseUrl = `http://127.0.0.1:${port}/api/v1/auth`;
+
+  let testStudentEmail = `test_student_${Date.now()}@edubatch.com`;
+
+  try {
+    console.log(`Starting automated Module 1 Auth verification on port ${port}...`);
+
+    // TEST 1: Register valid student
+    const regRes = await fetch(`${baseUrl}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Test Candidate",
+        email: testStudentEmail,
+        password: "Password@123",
+        phone: "+91 99999 88888",
+      }),
+    });
+    const regData = await regRes.json();
+    console.assert(regRes.status === 201, `Expected 201, got ${regRes.status}`);
+    console.assert(regData.success === true, "Expected success true");
+    console.assert(regData.data.user.role === "student", "Role must be student");
+    console.assert(!regData.data.user.password, "Password must not be returned");
+    console.log("✓ TEST 1 PASSED: Valid student registration");
+
+    // TEST 2: Attempt privilege escalation during register
+    const privEmail = `priv_test_${Date.now()}@edubatch.com`;
+    const privRes = await fetch(`${baseUrl}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Hacker",
+        email: privEmail,
+        password: "Password@123",
+        role: "admin", // Malicious injection
+      }),
+    });
+    const privData = await privRes.json();
+    console.assert(privRes.status === 201, `Expected 201, got ${privRes.status}`);
+    console.assert(privData.data.user.role === "student", "Privilege escalation bypassed!");
+    console.log("✓ TEST 2 PASSED: Privilege escalation blocked (forced to student)");
+
+    // TEST 3: Duplicate email registration
+    const dupRes = await fetch(`${baseUrl}/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Duplicate Person",
+        email: testStudentEmail,
+        password: "Password@123",
+      }),
+    });
+    const dupData = await dupRes.json();
+    console.assert(dupRes.status === 409, `Expected 409, got ${dupRes.status}`);
+    console.assert(dupData.success === false, "Expected success false");
+    console.log("✓ TEST 3 PASSED: Duplicate email registration rejected with 409");
+
+    // TEST 4: Login with valid credentials
+    const loginRes = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "admin@edubatch.com",
+        password: "Admin@123",
+      }),
+    });
+    const loginData = await loginRes.json();
+    console.assert(loginRes.status === 200, `Expected 200, got ${loginRes.status}`);
+    console.assert(loginData.data.user.role === "admin", "Role must be admin");
+    console.assert(!!loginData.data.token, "Token must be returned");
+    const adminToken = loginData.data.token;
+    console.log("✓ TEST 4 PASSED: Admin login successful with valid JWT");
+
+    // TEST 5: Login with wrong password
+    const badLoginRes = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "admin@edubatch.com",
+        password: "WrongPassword999",
+      }),
+    });
+    console.assert(badLoginRes.status === 401, `Expected 401, got ${badLoginRes.status}`);
+    console.log("✓ TEST 5 PASSED: Invalid password rejected with 401");
+
+    // TEST 6: Protected /me endpoint with valid token
+    const meRes = await fetch(`${baseUrl}/me`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const meData = await meRes.json();
+    console.assert(meRes.status === 200, `Expected 200, got ${meRes.status}`);
+    console.assert(meData.data.user.email === "admin@edubatch.com", "Must match email");
+    console.log("✓ TEST 6 PASSED: Protected /me authenticated successfully");
+
+    // TEST 7: Protected /me endpoint without token
+    const noTokenRes = await fetch(`${baseUrl}/me`);
+    console.assert(noTokenRes.status === 401, `Expected 401, got ${noTokenRes.status}`);
+    console.log("✓ TEST 7 PASSED: Protected /me without token rejected with 401");
+
+    // Cleanup test users
+    await User.deleteMany({ email: { $in: [testStudentEmail, privEmail] } });
+    console.log("Cleaned up temporary test users.");
+
+    console.log("\n=================================");
+    console.log("ALL MODULE 1 BACKEND TESTS PASSED!");
+    console.log("=================================\n");
+  } catch (err) {
+    console.error("Test failure:", err);
+    process.exit(1);
+  } finally {
+    server.close();
+    await mongoose.connection.close();
+    process.exit(0);
+  }
+};
+
+runTests();
