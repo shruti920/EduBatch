@@ -8,9 +8,18 @@ const getJwtSecret = () => {
   return secret;
 };
 
-const getJwtExpiresIn = () => process.env.JWT_EXPIRES_IN || "1d";
+// Short-lived by design: a stolen access token is only useful for minutes.
+// Sessions are kept alive by the rotating refresh token (see services/tokenService.js).
+export const accessTokenTtl = () => process.env.JWT_ACCESS_EXPIRES_IN || "15m";
 
-export const signToken = (payload) =>
-  jwt.sign(payload, getJwtSecret(), { expiresIn: getJwtExpiresIn() });
+export const signToken = (payload) => jwt.sign(payload, getJwtSecret(), { expiresIn: accessTokenTtl() });
+
+/**
+ * `tv` (token version) is copied from the user. Changing or resetting the password,
+ * "log out everywhere" and deactivation bump user.tokenVersion, which makes every
+ * access token issued before that moment invalid immediately — not in 15 minutes.
+ */
+export const signAccessToken = (user) =>
+  signToken({ id: user._id.toString(), role: user.role, tv: user.tokenVersion || 0 });
 
 export const verifyToken = (token) => jwt.verify(token, getJwtSecret());

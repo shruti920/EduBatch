@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "./_assertSafeDb.js";
+import { check } from "./_check.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -71,9 +72,9 @@ const runEnrollmentTests = async () => {
       }),
     });
     const enroll1Data = await enroll1Res.json();
-    console.assert(enroll1Res.status === 201, `Expected 201, got ${enroll1Res.status}`);
-    console.assert(enroll1Data.success === true, "Expected success: true");
-    console.assert(enroll1Data.data.enrollment.student.name === tempStudent1.name, "Must populate student");
+    check(enroll1Res.status === 201, `Expected 201, got ${enroll1Res.status}`);
+    check(enroll1Data.success === true, "Expected success: true");
+    check(enroll1Data.data.enrollment.student.name === tempStudent1.name, "Must populate student");
     console.log("✓ TEST 1 PASSED: Admin successfully enrolled student into cohort.");
 
     // TEST 2: Re-enrolling the same student into the same batch -> MUST FAIL WITH 400
@@ -88,7 +89,7 @@ const runEnrollmentTests = async () => {
         batch: tempBatch._id.toString(),
       }),
     });
-    console.assert(dupRes.status === 409, `Expected 409 for duplicate enrollment, got ${dupRes.status}`);
+    check(dupRes.status === 409, `Expected 409 for duplicate enrollment, got ${dupRes.status}`);
     console.log("✓ TEST 2 PASSED: Duplicate enrollment blocked with 409 Conflict.");
 
     // TEST 3: Attempt to enroll a teacher account as student -> MUST FAIL WITH 400
@@ -103,7 +104,7 @@ const runEnrollmentTests = async () => {
         batch: tempBatch._id.toString(),
       }),
     });
-    console.assert(invalidRoleRes.status === 400, `Expected 400 for non-student, got ${invalidRoleRes.status}`);
+    check(invalidRoleRes.status === 400, `Expected 400 for non-student, got ${invalidRoleRes.status}`);
     console.log("✓ TEST 3 PASSED: Enrolling a non-student rejected with 400.");
 
     // TEST 4: Hard capacity limit check: Batch capacity is 1, already has 1. Student 2 attempts to enroll -> MUST FAIL WITH 409
@@ -119,8 +120,8 @@ const runEnrollmentTests = async () => {
       }),
     });
     const capData = await capRes.json();
-    console.assert(capRes.status === 409, `Expected 409 on capacity limit, got ${capRes.status}`);
-    console.assert(capData.message.includes("is full"), "Message must explain capacity limit");
+    check(capRes.status === 409, `Expected 409 on capacity limit, got ${capRes.status}`);
+    check(capData.message.includes("is full"), "Message must explain capacity limit");
     console.log(`✓ TEST 4 PASSED: Hard capacity limit enforced. (${capData.message})`);
 
     // TEST 5: Student queries own enrollments (GET /my)
@@ -128,9 +129,9 @@ const runEnrollmentTests = async () => {
       headers: { Authorization: `Bearer ${studentToken}` },
     });
     const myData = await myRes.json();
-    console.assert(myRes.status === 200, `Expected 200, got ${myRes.status}`);
-    console.assert(Array.isArray(myData.data.enrollments), "Enrollments must be an array");
-    console.assert(myData.data.enrollments.length >= 1, "Student should have at least 1 enrollment");
+    check(myRes.status === 200, `Expected 200, got ${myRes.status}`);
+    check(Array.isArray(myData.data.enrollments), "Enrollments must be an array");
+    check(myData.data.enrollments.length >= 1, "Student should have at least 1 enrollment");
     console.log(`✓ TEST 5 PASSED: Student fetched ${myData.data.enrollments.length} personal enrollments.`);
 
     // TEST 6: Teacher views roster for assigned batch (GET /batch/:batchId)
@@ -138,16 +139,16 @@ const runEnrollmentTests = async () => {
       headers: { Authorization: `Bearer ${teacherToken}` },
     });
     const rosterData = await rosterRes.json();
-    console.assert(rosterRes.status === 200, `Expected 200, got ${rosterRes.status}`);
-    console.assert(Array.isArray(rosterData.data.roster), "Roster must be an array");
-    console.assert(rosterData.data.counts.enrolled >= 3, "JEE batch should have at least 3 students");
+    check(rosterRes.status === 200, `Expected 200, got ${rosterRes.status}`);
+    check(Array.isArray(rosterData.data.roster), "Roster must be an array");
+    check(rosterData.data.counts.enrolled >= 3, "JEE batch should have at least 3 students");
     console.log(`✓ TEST 6 PASSED: Teacher viewed assigned batch roster (${rosterData.data.roster.length} candidates).`);
 
     // TEST 7: Student attempts to view class roster -> MUST BE 403 FORBIDDEN
     const studentRosterRes = await fetch(`${baseUrl}/batch/${jeeBatch._id}`, {
       headers: { Authorization: `Bearer ${studentToken}` },
     });
-    console.assert(studentRosterRes.status === 403, `Expected 403 for student roster view, got ${studentRosterRes.status}`);
+    check(studentRosterRes.status === 403, `Expected 403 for student roster view, got ${studentRosterRes.status}`);
     console.log("✓ TEST 7 PASSED: Student blocked from viewing class roster (403 Forbidden).");
 
     // TEST 8: Admin soft-drops candidate
@@ -156,8 +157,8 @@ const runEnrollmentTests = async () => {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const dropData = await dropRes.json();
-    console.assert(dropRes.status === 200, `Expected 200, got ${dropRes.status}`);
-    console.assert(dropData.data.isActive === false, "Must set isActive to false");
+    check(dropRes.status === 200, `Expected 200, got ${dropRes.status}`);
+    check(dropData.data.isActive === false, "Must set isActive to false");
     console.log("✓ TEST 8 PASSED: Admin soft-dropped candidate from cohort.");
 
     console.log("\n======================================");

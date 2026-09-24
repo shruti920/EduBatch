@@ -3,6 +3,10 @@ import Batch from "../models/Batch.js";
 import User from "../models/User.js";
 import AppError from "../utils/AppError.js";
 import escapeRegex from "../utils/escapeRegex.js";
+import { sendEnrollmentEmail, sendInBackground } from "../services/emailService.js";
+
+// Offline "paid" freezes the fee at that moment; any other status clears it
+const amountFor = (paymentStatus, batch) => (paymentStatus === "paid" ? batch.fee : null);
 
 const STUDENT_FIELDS = "name email phone avatar";
 const BATCH_FIELDS = "name subject schedule fee status capacity teacher";
@@ -71,10 +75,18 @@ export const enrollStudent = async (req, res, next) => {
 
     if (existing) {
       // Previously dropped — reactivate the same record so history is kept
-      const previous = { enrolledAt: existing.enrolledAt, paymentStatus: existing.paymentStatus };
+      const previous = {
+        enrolledAt: existing.enrolledAt,
+        paymentStatus: existing.paymentStatus,
+        amountPaid: existing.amountPaid,
+      };
       existing.isActive = true;
       existing.enrolledAt = new Date();
-      existing.paymentStatus = paymentStatus;
+      // A fee already paid online stays paid; otherwise take the status the admin chose
+      if (!(existing.paymentStatus === "paid" && existing.payment)) {
+        existing.paymentStatus = paymentStatus;
+        existing.amountPaid = amountFor(paymentStatus, batch);
+      }
       await existing.save();
       await confirmSeatOrRollback(batch, () =>
         Enrollment.updateOne({ _id: existing._id }, { isActive: false, ...previous })
@@ -86,11 +98,13 @@ export const enrollStudent = async (req, res, next) => {
         student: student._id,
         batch: batch._id,
         paymentStatus,
+        amountPaid: amountFor(paymentStatus, batch),
       });
       await confirmSeatOrRollback(batch, () => Enrollment.deleteOne({ _id: enrollment._id }));
     }
 
     const populated = await populateEnrollment(Enrollment.findById(enrollment._id));
+    sendInBackground(() => sendEnrollmentEmail(student, batch));
 
     res.status(statusCode).json({
       success: true,
@@ -223,16 +237,20 @@ export const updateEnrollmentStatus = async (req, res, next) => {
     }
 
     const reactivating = isActive === true && !enrollment.isActive;
-    let batch = null;
+    const batch = await Batch.findById(enrollment.batch);
+    if (!batch) return next(new AppError("Batch not found.", 404));
 
     if (reactivating) {
       // Same rules as a fresh enrollment: batch must be open and have a free seat
-      batch = await Batch.findById(enrollment.batch);
       assertEnrollableBatch(batch);
       await assertSeatAvailable(batch);
     }
 
-    if (paymentStatus) enrollment.paymentStatus = paymentStatus;
+    if (paymentStatus && paymentStatus !== enrollment.paymentStatus) {
+      enrollment.paymentStatus = paymentStatus;
+      // Online-paid fees keep their Razorpay amount; offline changes freeze or clear it
+      if (!enrollment.payment) enrollment.amountPaid = amountFor(paymentStatus, batch);
+    }
     if (isActive !== undefined) enrollment.isActive = isActive;
     await enrollment.save();
 

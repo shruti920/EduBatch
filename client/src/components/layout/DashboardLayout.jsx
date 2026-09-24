@@ -1,8 +1,20 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Layers, Users, ClipboardCheck, IndianRupee, Megaphone, LogOut, Menu, X } from "lucide-react";
+import {
+  LayoutDashboard,
+  Layers,
+  Users,
+  UserCog,
+  ClipboardCheck,
+  IndianRupee,
+  Megaphone,
+  CircleUser,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
 import { useAuth, homePathFor } from "../../context/AuthContext";
-import { initials } from "../../utils/format";
+import Avatar from "../Avatar";
 import { NOTICES_SEEN_EVENT, getUnreadNoticeCount } from "../../api/noticeApi";
 
 const ROLE_LABEL = { admin: "Admin", teacher: "Teacher", student: "Student" };
@@ -16,6 +28,8 @@ const navFor = (role) =>
     { label: "Attendance", to: "/attendance", icon: ClipboardCheck, roles: ["admin", "teacher", "student"] },
     { label: "Payments", to: "/payments", icon: IndianRupee, roles: ["admin", "student"] },
     { label: "Notices", to: "/notices", icon: Megaphone, roles: ["admin", "teacher", "student"], badge: "notices" },
+    { label: "Users", to: "/admin/users", icon: UserCog, roles: ["admin"] },
+    { label: "Profile", to: "/profile", icon: CircleUser, roles: ["admin", "teacher", "student"] },
   ].filter((item) => item.roles.includes(role));
 
 const Wordmark = ({ light = false }) => (
@@ -44,8 +58,8 @@ const DashboardLayout = ({ children }) => {
     };
   }, [location.pathname]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate("/login", { replace: true });
   };
 
@@ -81,12 +95,7 @@ const DashboardLayout = ({ children }) => {
   const account = (
     <div className="border-t border-white/10 p-4">
       <div className="flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-marigold text-sm font-semibold text-ink"
-          aria-hidden="true"
-        >
-          {initials(user?.name)}
-        </div>
+        <Avatar name={user?.name} src={user?.avatar} />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-white">{user?.name}</p>
           <p className="text-xs text-ink-100/70">{ROLE_LABEL[user?.role]}</p>

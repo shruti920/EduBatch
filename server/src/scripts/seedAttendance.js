@@ -98,7 +98,7 @@ const seedAttendance = async () => {
           records,
           markedBy: teacher._id,
         },
-        { upsert: true, new: true, runValidators: true }
+        { upsert: true, returnDocument: "after", runValidators: true }
       );
       console.log(`Seeded JEE attendance for ${date.toISOString().slice(0, 10)}`);
     }
@@ -126,7 +126,7 @@ const seedAttendance = async () => {
           records,
           markedBy: teacher._id,
         },
-        { upsert: true, new: true, runValidators: true }
+        { upsert: true, returnDocument: "after", runValidators: true }
       );
       console.log(`Seeded NEET attendance for ${date.toISOString().slice(0, 10)}`);
     }

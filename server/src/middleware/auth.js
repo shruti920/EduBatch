@@ -21,6 +21,10 @@ export const protect = async (req, res, next) => {
     if (!user.isActive) {
       return next(new AppError("This account has been deactivated. Contact an admin.", 403));
     }
+    // Password changed / reset / "log out everywhere" since this token was issued
+    if ((decoded.tv ?? 0) !== (user.tokenVersion || 0)) {
+      return next(new AppError("Your session has ended. Please log in again.", 401));
+    }
 
     req.user = user;
     next();
@@ -38,3 +42,15 @@ export const restrictTo =
     }
     next();
   };
+
+/**
+ * CSRF guard for the cookie-authenticated endpoints (/auth/refresh, /auth/logout).
+ * A cross-site form or <img> can't set custom headers, and a cross-origin fetch that
+ * sets one triggers a CORS preflight that our CORS policy rejects.
+ */
+export const requireXhrHeader = (req, res, next) => {
+  if (req.get("x-requested-with") !== "XMLHttpRequest") {
+    return next(new AppError("Missing X-Requested-With header.", 403));
+  }
+  next();
+};

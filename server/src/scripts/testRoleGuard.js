@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "./_assertSafeDb.js";
+import { check } from "./_check.js";
 import mongoose from "mongoose";
 import express from "express";
 import connectDB from "../config/db.js";
@@ -44,30 +45,30 @@ const testRoleGuard = async () => {
     const res1 = await fetch(`${baseUrl}/admin-only`, {
       headers: { Authorization: `Bearer ${studentToken}` },
     });
-    console.assert(res1.status === 403, `Expected 403 for student on admin route, got ${res1.status}`);
+    check(res1.status === 403, `Expected 403 for student on admin route, got ${res1.status}`);
     const data1 = await res1.json();
-    console.assert(data1.success === false, "Expected success: false");
+    check(data1.success === false, "Expected success: false");
     console.log("✓ TEST 1 PASSED: Student blocked from Admin route with 403 Forbidden");
 
     // Test 2: Teacher hits admin-only route -> MUST BE 403 FORBIDDEN
     const res2 = await fetch(`${baseUrl}/admin-only`, {
       headers: { Authorization: `Bearer ${teacherToken}` },
     });
-    console.assert(res2.status === 403, `Expected 403 for teacher on admin route, got ${res2.status}`);
+    check(res2.status === 403, `Expected 403 for teacher on admin route, got ${res2.status}`);
     console.log("✓ TEST 2 PASSED: Teacher blocked from Admin route with 403 Forbidden");
 
     // Test 3: Admin hits admin-only route -> MUST BE 200 OK
     const res3 = await fetch(`${baseUrl}/admin-only`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    console.assert(res3.status === 200, `Expected 200 for admin on admin route, got ${res3.status}`);
+    check(res3.status === 200, `Expected 200 for admin on admin route, got ${res3.status}`);
     console.log("✓ TEST 3 PASSED: Admin permitted access to Admin route (200 OK)");
 
     // Test 4: Teacher hits faculty route -> MUST BE 200 OK
     const res4 = await fetch(`${baseUrl}/faculty-only`, {
       headers: { Authorization: `Bearer ${teacherToken}` },
     });
-    console.assert(res4.status === 200, `Expected 200 for teacher on faculty route, got ${res4.status}`);
+    check(res4.status === 200, `Expected 200 for teacher on faculty route, got ${res4.status}`);
     console.log("✓ TEST 4 PASSED: Teacher permitted access to Faculty route (200 OK)");
 
     console.log("\n==================================");

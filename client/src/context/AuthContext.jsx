@@ -1,25 +1,17 @@
 /* eslint-disable react-refresh/only-export-components -- provider and hook live together on purpose */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import api, { TOKEN_KEY, USER_KEY } from "../api/axios";
+import api, { refreshSession, setAccessToken } from "../api/axios";
 
 const AuthContext = createContext(null);
-
-const readStoredUser = () => {
-  try {
-    return JSON.parse(localStorage.getItem(USER_KEY)) || null;
-  } catch {
-    return null;
-  }
-};
 
 export const homePathFor = (role) =>
   role === "admin" ? "/admin" : role === "teacher" ? "/teacher" : "/student";
 
 // Pages each role may open. Used to decide where to send someone after login.
 const ROLE_PATHS = {
-  admin: ["/admin", "/enrollments", "/attendance", "/payments", "/notices"],
-  teacher: ["/teacher", "/enrollments", "/attendance", "/notices"],
-  student: ["/student", "/attendance", "/payments", "/notices"],
+  admin: ["/admin", "/enrollments", "/attendance", "/payments", "/notices", "/profile"],
+  teacher: ["/teacher", "/enrollments", "/attendance", "/notices", "/profile"],
+  student: ["/student", "/attendance", "/payments", "/notices", "/profile"],
 };
 
 // Return to the page that asked for login — but only if this role can open it
@@ -31,78 +23,84 @@ export const postLoginPath = (role, fromPath) => {
   return homePathFor(role);
 };
 
+const messageFrom = (error, fallback) => error.response?.data?.message || fallback;
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(readStoredUser);
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
-  // Only block the UI on first load if there is a stored session to verify
-  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)));
+  const [user, setUser] = useState(null);
+  // Blocks protected routes until we know whether the refresh cookie holds a session
+  const [loading, setLoading] = useState(true);
 
-  const saveSession = (nextUser, nextToken) => {
-    localStorage.setItem(TOKEN_KEY, nextToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-    setToken(nextToken);
+  // A session starts: token in memory, user in state
+  const applySession = useCallback(({ user: nextUser, token }) => {
+    setAccessToken(token);
     setUser(nextUser);
-  };
+    return nextUser;
+  }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    setToken(null);
+  const clearSession = useCallback(() => {
+    setAccessToken(null);
     setUser(null);
   }, []);
 
+  // Restore the session on page load from the httpOnly refresh cookie
   useEffect(() => {
-    window.addEventListener("edubatch-logout", logout);
-    return () => window.removeEventListener("edubatch-logout", logout);
-  }, [logout]);
+    let active = true;
+    refreshSession()
+      .then((data) => active && setUser(data.user))
+      .catch(() => active && clearSession())
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [clearSession]);
 
-  // Re-validate a stored session once on load
+  // The axios interceptor fires this when a refresh fails mid-session
   useEffect(() => {
-    if (!localStorage.getItem(TOKEN_KEY)) return;
-    api
-      .get("/auth/me")
-      .then((res) => {
-        const freshUser = res.data.data.user;
-        setUser(freshUser);
-        localStorage.setItem(USER_KEY, JSON.stringify(freshUser));
-      })
-      .catch((err) => {
-        // 401s are already handled by the axios interceptor. If the API is just
-        // unreachable, keep the stored session instead of logging the user out.
-        if (err.response?.status === 403) logout();
-      })
-      .finally(() => setLoading(false));
-  }, [logout]);
+    window.addEventListener("edubatch-logout", clearSession);
+    return () => window.removeEventListener("edubatch-logout", clearSession);
+  }, [clearSession]);
 
   const login = async (email, password) => {
     try {
       const res = await api.post("/auth/login", { email, password });
-      const { user: nextUser, token: nextToken } = res.data.data;
-      saveSession(nextUser, nextToken);
-      return nextUser;
+      return applySession(res.data.data);
     } catch (error) {
-      throw new Error(error.response?.data?.message || "Couldn't log in. Check your email and password.", {
-        cause: error,
-      });
+      throw new Error(messageFrom(error, "Couldn't log in. Check your email and password."), { cause: error });
     }
   };
 
   const register = async (payload) => {
     try {
       const res = await api.post("/auth/register", payload);
-      const { user: nextUser, token: nextToken } = res.data.data;
-      saveSession(nextUser, nextToken);
-      return nextUser;
+      return applySession(res.data.data);
     } catch (error) {
-      throw new Error(error.response?.data?.message || "Couldn't create the account. Try again.", {
-        cause: error,
-      });
+      throw new Error(messageFrom(error, "Couldn't create the account. Try again."), { cause: error });
     }
   };
 
+  // Revokes the refresh token on the server; the local session ends either way
+  const logout = useCallback(async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      /* offline or already logged out: still clear locally */
+    }
+    clearSession();
+  }, [clearSession]);
+
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, isAuthenticated: Boolean(token && user), login, register, logout }}
+      value={{
+        user,
+        loading,
+        isAuthenticated: Boolean(user),
+        login,
+        register,
+        logout,
+        applySession,
+        clearSession,
+        updateUser: setUser,
+      }}
     >
       {children}
     </AuthContext.Provider>

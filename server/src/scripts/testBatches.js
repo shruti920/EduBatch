@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "./_assertSafeDb.js";
+import { check } from "./_check.js";
 import mongoose from "mongoose";
 import app from "../app.js";
 import connectDB from "../config/db.js";
@@ -32,10 +33,10 @@ const runBatchTests = async () => {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const listData = await listRes.json();
-    console.assert(listRes.status === 200, `Expected 200, got ${listRes.status}`);
-    console.assert(listData.success === true, "Expected success: true");
-    console.assert(Array.isArray(listData.data.batches), "Batches must be an array");
-    console.assert(listData.data.counts.all >= 4, "Must have at least 4 batches");
+    check(listRes.status === 200, `Expected 200, got ${listRes.status}`);
+    check(listData.success === true, "Expected success: true");
+    check(Array.isArray(listData.data.batches), "Batches must be an array");
+    check(listData.data.counts.all >= 4, "Must have at least 4 batches");
     console.log(`✓ TEST 1 PASSED: Admin fetched ${listData.data.batches.length} cohorts with summary counts.`);
 
     // TEST 2: Teacher only sees assigned batches
@@ -43,9 +44,9 @@ const runBatchTests = async () => {
       headers: { Authorization: `Bearer ${teacherToken}` },
     });
     const teacherData = await teacherRes.json();
-    console.assert(teacherRes.status === 200, `Expected 200, got ${teacherRes.status}`);
+    check(teacherRes.status === 200, `Expected 200, got ${teacherRes.status}`);
     for (const b of teacherData.data.batches) {
-      console.assert(
+      check(
         b.teacher._id.toString() === teacherUser._id.toString(),
         "Teacher saw unassigned batch!"
       );
@@ -78,10 +79,10 @@ const runBatchTests = async () => {
       body: JSON.stringify(newBatchPayload),
     });
     const createData = await createRes.json();
-    console.assert(createRes.status === 201, `Expected 201, got ${createRes.status}`);
-    console.assert(createData.success === true, "Expected success: true");
+    check(createRes.status === 201, `Expected 201, got ${createRes.status}`);
+    check(createData.success === true, "Expected success: true");
     createdBatchId = createData.data.batch._id;
-    console.assert(createData.data.batch.teacher.name === teacherUser.name, "Teacher must be populated");
+    check(createData.data.batch.teacher.name === teacherUser.name, "Teacher must be populated");
     console.log("✓ TEST 3 PASSED: Admin created new batch successfully.");
 
     // TEST 4: Admin attempts to assign a student as teacher -> MUST FAIL WITH 400
@@ -97,7 +98,7 @@ const runBatchTests = async () => {
         teacher: studentUser._id.toString(), // Student as teacher
       }),
     });
-    console.assert(
+    check(
       invalidTeacherRes.status === 400,
       `Expected 400 when assigning non-teacher, got ${invalidTeacherRes.status}`
     );
@@ -112,7 +113,7 @@ const runBatchTests = async () => {
       },
       body: JSON.stringify(newBatchPayload),
     });
-    console.assert(studentCreateRes.status === 403, `Expected 403 for student create, got ${studentCreateRes.status}`);
+    check(studentCreateRes.status === 403, `Expected 403 for student create, got ${studentCreateRes.status}`);
     console.log("✓ TEST 5 PASSED: Student blocked from batch creation (403 Forbidden).");
 
     // TEST 6: Admin updates batch status to archived
@@ -125,8 +126,8 @@ const runBatchTests = async () => {
       body: JSON.stringify({ status: "archived" }),
     });
     const statusData = await statusRes.json();
-    console.assert(statusRes.status === 200, `Expected 200, got ${statusRes.status}`);
-    console.assert(statusData.data.batch.isArchived === true, "Must set isArchived to true");
+    check(statusRes.status === 200, `Expected 200, got ${statusRes.status}`);
+    check(statusData.data.batch.isArchived === true, "Must set isArchived to true");
     console.log("✓ TEST 6 PASSED: Batch status updated to archived.");
 
     // TEST 7: Admin fetches faculty list for dropdowns
@@ -134,8 +135,8 @@ const runBatchTests = async () => {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const facData = await facRes.json();
-    console.assert(facRes.status === 200, `Expected 200, got ${facRes.status}`);
-    console.assert(Array.isArray(facData.data.teachers), "Teachers must be an array");
+    check(facRes.status === 200, `Expected 200, got ${facRes.status}`);
+    check(Array.isArray(facData.data.teachers), "Teachers must be an array");
     console.log(`✓ TEST 7 PASSED: Faculty metadata endpoint returned ${facData.data.teachers.length} active leads.`);
 
     // Cleanup test batch
