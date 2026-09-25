@@ -1,20 +1,23 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useToast } from "../context/ToastContext";
 import { createPaymentOrder, reportPaymentFailure, verifyPayment } from "../api/paymentApi";
 import { loadRazorpayCheckout } from "../utils/razorpay";
 import { errorMessage, formatINR } from "../utils/format";
 
-/**
- * Runs the whole Razorpay flow for one enrollment:
- * server order → Checkout modal → server-side signature verification.
- * The fee only shows as paid after the server confirms it.
- */
 export const usePayFee = ({ onPaid } = {}) => {
   const toast = useToast();
   const [payingId, setPayingId] = useState(null);
+  const [phase, setPhase] = useState(null);
+  const busy = useRef(false);
 
   const pay = async (enrollment) => {
+    if (busy.current) {
+      toast.error("Finish or close the payment that's already open first.");
+      return;
+    }
+    busy.current = true;
     setPayingId(enrollment._id);
+    setPhase("opening");
 
     let order;
     let Razorpay;
@@ -22,14 +25,18 @@ export const usePayFee = ({ onPaid } = {}) => {
       [order, Razorpay] = await Promise.all([createPaymentOrder(enrollment._id), loadRazorpayCheckout()]);
     } catch (err) {
       toast.error(errorMessage(err));
+      busy.current = false;
       setPayingId(null);
+      setPhase(null);
       return;
     }
 
     let settled = false;
     const finish = ({ tone, text }) => {
       settled = true;
+      busy.current = false;
       setPayingId(null);
+      setPhase(null);
       if (tone === "success") toast.success(text);
       else toast.error(text);
     };
@@ -40,14 +47,12 @@ export const usePayFee = ({ onPaid } = {}) => {
       amount: order.amount,
       currency: order.currency,
       name: "EduBatch",
-      description: `Fee · ${order.batchName}`,
+      description: `${order.batchName} fee`,
       prefill: order.prefill,
       notes: { enrollmentId: enrollment._id },
-      theme: { color: "#1B2A4A" },
+      theme: { color: "#1F3494" },
       retry: { enabled: true },
       modal: {
-        // Off on purpose: Razorpay's close-confirmation can show as a native browser
-        // dialog ("localhost says"). Closing is harmless — the order is reused next time.
         confirm_close: false,
         ondismiss: () => {
           if (settled) return;
@@ -62,8 +67,6 @@ export const usePayFee = ({ onPaid } = {}) => {
           finish({ tone: "success", text: `Payment of ${formatINR(order.amount / 100)} received for ${order.batchName}.` });
           onPaid?.();
         } catch (err) {
-          // The server message already covers rejected signatures; add the recovery
-          // hint for everything else (e.g. the connection dropped after paying)
           const message = errorMessage(err);
           finish({
             tone: "error",
@@ -76,7 +79,6 @@ export const usePayFee = ({ onPaid } = {}) => {
       },
     });
 
-    // Fires for each failed attempt; Checkout stays open so the student can retry
     checkout.on("payment.failed", (resp) => {
       reportPaymentFailure({
         razorpay_order_id: order.orderId,
@@ -86,7 +88,10 @@ export const usePayFee = ({ onPaid } = {}) => {
     });
 
     checkout.open();
+    setPhase("open");
   };
 
-  return { pay, payingId };
+  const labelFor = (id, idle) => (id !== payingId ? idle : phase === "opening" ? "Opening…" : "Paying…");
+
+  return { pay, payingId, labelFor };
 };

@@ -5,11 +5,6 @@ import Attendance from "../models/Attendance.js";
 import { todayKey } from "../utils/date.js";
 import { upcomingClasses } from "../utils/schedule.js";
 
-/**
- * Revenue = money actually received, frozen per enrollment in `amountPaid`.
- * Includes students who paid and were later dropped (the money was still received).
- * Older records without amountPaid fall back to the Razorpay amount, then the batch fee.
- */
 const revenueSummary = async () => {
   const paid = await Enrollment.find({ paymentStatus: "paid" })
     .select("amountPaid payment batch")
@@ -30,7 +25,6 @@ const revenueSummary = async () => {
 
 const ATTENDED = ["present", "late"];
 
-// Returns { [batchId]: activeSeatCount }
 const seatMapFor = async (batchIds) => {
   const rows = await Enrollment.aggregate([
     { $match: { batch: { $in: batchIds }, isActive: true } },
@@ -49,10 +43,8 @@ const withSeats = (batch, seatMap) => {
   };
 };
 
-// null when there is nothing to measure — the UI shows "—" instead of a fake 100%
 const rate = (part, total) => (total > 0 ? Math.round((part / total) * 1000) / 10 : null);
 
-// GET /dashboard/admin
 export const getAdminDashboard = async (req, res, next) => {
   try {
     const today = todayKey();
@@ -74,7 +66,6 @@ export const getAdminDashboard = async (req, res, next) => {
     const batchRows = batches.map((b) => withSeats(b, seatMap));
     const activeBatches = batchRows.filter((b) => b.status === "active");
 
-    // Collected = money received (frozen amounts). Pending = what active seats still owe at today's fee.
     const fees = {
       collected: revenue.collected,
       collectedOnline: revenue.online,
@@ -117,7 +108,6 @@ export const getAdminDashboard = async (req, res, next) => {
           pendingToday: activeBatches.filter((b) => !markedToday.has(b._id.toString())).length,
         },
         batches: batchRows,
-        // Admin sees the whole institute's classes for today
         upcomingClasses: upcomingClasses(batches, { days: 1, limit: 12 }),
       },
       message: "Admin dashboard retrieved.",
@@ -127,7 +117,6 @@ export const getAdminDashboard = async (req, res, next) => {
   }
 };
 
-// GET /dashboard/teacher
 export const getTeacherDashboard = async (req, res, next) => {
   try {
     const batches = await Batch.find({
@@ -166,7 +155,6 @@ export const getTeacherDashboard = async (req, res, next) => {
   }
 };
 
-// GET /dashboard/student
 export const getStudentDashboard = async (req, res, next) => {
   try {
     const studentId = req.user._id.toString();
@@ -185,7 +173,6 @@ export const getStudentDashboard = async (req, res, next) => {
       "records.student": req.user._id,
     }).select("batch records");
 
-    // Per-batch attendance so each enrolled batch card can show its own rate
     const perBatch = {};
     let total = 0;
     let attended = 0;
@@ -230,6 +217,89 @@ export const getStudentDashboard = async (req, res, next) => {
       },
       message: "Student dashboard retrieved.",
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const tz = () => process.env.APP_TIMEZONE || "Asia/Kolkata";
+
+const monthKeyOf = (date) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz(), year: "numeric", month: "2-digit" })
+      .formatToParts(new Date(date))
+      .map((p) => [p.type, p.value])
+  );
+  return `${parts.year}-${parts.month}`;
+};
+
+const recentMonths = (count, now = new Date()) => {
+  const [y, m] = monthKeyOf(now).split("-").map(Number);
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(Date.UTC(y, m - 1 - (count - 1 - i), 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+};
+
+const monthLabel = (key) =>
+  new Date(`${key}-15T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+
+export const getAdminAnalytics = async (req, res, next) => {
+  try {
+    const count = Math.min(12, Math.max(3, Number.parseInt(req.query.months, 10) || 6));
+    const keys = recentMonths(count);
+    const first = new Date(`${keys[0]}-01T00:00:00Z`);
+    const since = new Date(first.getTime() - 24 * 60 * 60 * 1000);
+
+    const [paid, enrolled, attendance] = await Promise.all([
+      Enrollment.find({ paymentStatus: "paid" })
+        .select("amountPaid paidAt updatedAt payment batch")
+        .populate("payment", "amount status paidAt")
+        .populate("batch", "fee")
+        .lean(),
+      Enrollment.find({ enrolledAt: { $gte: since } }).select("enrolledAt").lean(),
+      Attendance.find({ date: { $gte: since } }).select("date records.status").lean(),
+    ]);
+
+    const rows = Object.fromEntries(
+      keys.map((key) => [
+        key,
+        { month: key, label: monthLabel(key), revenue: 0, online: 0, offline: 0, payments: 0, enrollments: 0, marked: 0, attended: 0 },
+      ])
+    );
+
+    paid.forEach((e) => {
+      const isOnline = Boolean(e.payment && e.payment.status === "paid");
+      const when = e.paidAt || (isOnline && e.payment.paidAt) || e.updatedAt;
+      const row = rows[monthKeyOf(when)];
+      if (!row) return;
+      const amount = e.amountPaid ?? (isOnline ? e.payment.amount / 100 : e.batch?.fee || 0);
+      row.revenue += amount;
+      row.payments += 1;
+      if (isOnline) row.online += amount;
+      else row.offline += amount;
+    });
+
+    enrolled.forEach((e) => {
+      const row = rows[monthKeyOf(e.enrolledAt)];
+      if (row) row.enrollments += 1;
+    });
+
+    attendance.forEach((a) => {
+      const row = rows[a.date.toISOString().slice(0, 7)];
+      if (!row) return;
+      a.records.forEach((r) => {
+        row.marked += 1;
+        if (r.status === "present" || r.status === "late") row.attended += 1;
+      });
+    });
+
+    const months = keys.map((key) => {
+      const { marked, attended, ...rest } = rows[key];
+      return { ...rest, attendanceRate: marked ? Math.round((attended / marked) * 100) : null, marked };
+    });
+
+    res.status(200).json({ success: true, data: { months }, message: "Analytics retrieved." });
   } catch (error) {
     next(error);
   }

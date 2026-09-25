@@ -5,7 +5,6 @@ import AppError from "../utils/AppError.js";
 import escapeRegex from "../utils/escapeRegex.js";
 import { sendEnrollmentEmail, sendInBackground } from "../services/emailService.js";
 
-// Offline "paid" freezes the fee at that moment; any other status clears it
 const amountFor = (paymentStatus, batch) => (paymentStatus === "paid" ? batch.fee : null);
 
 const STUDENT_FIELDS = "name email phone avatar";
@@ -19,15 +18,6 @@ const activeSeatCount = (batchId) => Enrollment.countDocuments({ batch: batchId,
 const capacityError = (batch) =>
   new AppError(`"${batch.name}" is full (${batch.capacity}/${batch.capacity} seats).`, 409);
 
-/**
- * Capacity guard used by every path that makes an enrollment active.
- *
- * Pre-check: reject if the batch is already full.
- * Post-check: after the write, recount. If two admins enrolled into the last
- * seat at the same moment, the count is now over capacity and this request
- * undoes its own write. Worst case under a race is a rejected request —
- * never an overfilled batch.
- */
 const assertSeatAvailable = async (batch) => {
   if ((await activeSeatCount(batch._id)) >= batch.capacity) throw capacityError(batch);
 };
@@ -46,7 +36,6 @@ const assertEnrollableBatch = (batch) => {
   }
 };
 
-// POST /enrollments (admin)
 export const enrollStudent = async (req, res, next) => {
   try {
     const { student: studentId, batch: batchId, paymentStatus } = req.body;
@@ -74,18 +63,18 @@ export const enrollStudent = async (req, res, next) => {
     let statusCode = 201;
 
     if (existing) {
-      // Previously dropped — reactivate the same record so history is kept
       const previous = {
         enrolledAt: existing.enrolledAt,
         paymentStatus: existing.paymentStatus,
         amountPaid: existing.amountPaid,
+        paidAt: existing.paidAt,
       };
       existing.isActive = true;
       existing.enrolledAt = new Date();
-      // A fee already paid online stays paid; otherwise take the status the admin chose
       if (!(existing.paymentStatus === "paid" && existing.payment)) {
         existing.paymentStatus = paymentStatus;
         existing.amountPaid = amountFor(paymentStatus, batch);
+        existing.paidAt = paymentStatus === "paid" ? new Date() : null;
       }
       await existing.save();
       await confirmSeatOrRollback(batch, () =>
@@ -99,6 +88,7 @@ export const enrollStudent = async (req, res, next) => {
         batch: batch._id,
         paymentStatus,
         amountPaid: amountFor(paymentStatus, batch),
+        paidAt: paymentStatus === "paid" ? new Date() : null,
       });
       await confirmSeatOrRollback(batch, () => Enrollment.deleteOne({ _id: enrollment._id }));
     }
@@ -116,7 +106,6 @@ export const enrollStudent = async (req, res, next) => {
   }
 };
 
-// GET /enrollments/my (student)
 export const getMyEnrollments = async (req, res, next) => {
   try {
     const enrollments = await Enrollment.find({ student: req.user._id, isActive: true })
@@ -133,7 +122,6 @@ export const getMyEnrollments = async (req, res, next) => {
   }
 };
 
-// GET /enrollments/batch/:batchId (admin, or the batch's own teacher)
 export const getBatchRoster = async (req, res, next) => {
   try {
     const batch = await Batch.findById(req.params.batchId).populate("teacher", "name email");
@@ -173,7 +161,6 @@ export const getBatchRoster = async (req, res, next) => {
   }
 };
 
-// GET /enrollments (admin) — filter by batch, paymentStatus, search (student name/email)
 export const getAllEnrollments = async (req, res, next) => {
   try {
     const { batch, paymentStatus, search } = req.query;
@@ -217,7 +204,6 @@ export const getAllEnrollments = async (req, res, next) => {
   }
 };
 
-// PATCH /enrollments/:id/status (admin) — record offline payment / waiver, or reactivate
 export const updateEnrollmentStatus = async (req, res, next) => {
   try {
     const { paymentStatus, isActive } = req.body;
@@ -225,8 +211,6 @@ export const updateEnrollmentStatus = async (req, res, next) => {
     const enrollment = await Enrollment.findById(req.params.id);
     if (!enrollment) return next(new AppError("Enrollment not found.", 404));
 
-    // A fee paid online through Razorpay can't be flipped back here: the money
-    // would still sit in Razorpay. Refund it from the Razorpay dashboard first.
     if (paymentStatus && paymentStatus !== "paid" && enrollment.paymentStatus === "paid" && enrollment.payment) {
       return next(
         new AppError(
@@ -241,15 +225,16 @@ export const updateEnrollmentStatus = async (req, res, next) => {
     if (!batch) return next(new AppError("Batch not found.", 404));
 
     if (reactivating) {
-      // Same rules as a fresh enrollment: batch must be open and have a free seat
       assertEnrollableBatch(batch);
       await assertSeatAvailable(batch);
     }
 
     if (paymentStatus && paymentStatus !== enrollment.paymentStatus) {
       enrollment.paymentStatus = paymentStatus;
-      // Online-paid fees keep their Razorpay amount; offline changes freeze or clear it
-      if (!enrollment.payment) enrollment.amountPaid = amountFor(paymentStatus, batch);
+      if (!enrollment.payment) {
+        enrollment.amountPaid = amountFor(paymentStatus, batch);
+        enrollment.paidAt = paymentStatus === "paid" ? new Date() : null;
+      }
     }
     if (isActive !== undefined) enrollment.isActive = isActive;
     await enrollment.save();
@@ -272,7 +257,6 @@ export const updateEnrollmentStatus = async (req, res, next) => {
   }
 };
 
-// DELETE /enrollments/:id (admin) — soft drop, frees the seat
 export const dropStudent = async (req, res, next) => {
   try {
     const enrollment = await Enrollment.findById(req.params.id);
@@ -291,7 +275,6 @@ export const dropStudent = async (req, res, next) => {
   }
 };
 
-// GET /enrollments/students (admin) — options for the enroll form
 export const getStudentOptions = async (req, res, next) => {
   try {
     const students = await User.find({ role: "student", isActive: true })

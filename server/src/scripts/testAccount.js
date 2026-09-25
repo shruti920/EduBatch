@@ -1,5 +1,3 @@
-// Module 8a: sessions (refresh/rotation/logout), password reset, change password,
-// profile, admin user management, dashboard revenue + upcoming classes.
 import "dotenv/config";
 import "./_assertSafeDb.js";
 import { check } from "./_check.js";
@@ -22,12 +20,11 @@ const run = async () => {
   const stamp = Date.now();
   const created = { users: [], batches: [] };
 
-  // Minimal cookie jar: one refresh cookie per "browser"
   const cookieFrom = (res) => {
     const raw = (res.headers.getSetCookie?.() || []).find((c) => c.startsWith("eb_rt="));
     if (!raw) return undefined;
     const value = raw.split(";")[0].slice("eb_rt=".length);
-    return value || null; // null = cleared
+    return value || null;
   };
 
   const call = async (method, path, { token, body, cookie, xhr = true } = {}) => {
@@ -41,7 +38,6 @@ const run = async () => {
   };
 
   try {
-    /* ---------------- Sessions ---------------- */
     const email = `acct_${stamp}@example.com`;
     const reg = await call("POST", "/auth/register", {
       body: { name: "Account Tester", email, password: "FirstPass1" },
@@ -71,12 +67,10 @@ const run = async () => {
     check(r1.cookie && r1.cookie !== reg.cookie, "refresh rotates the cookie");
     console.log("✓ Refresh returns a new access token and rotates the refresh cookie");
 
-    // Replay of the old token inside the grace window (parallel tabs) is tolerated
     const race = await call("POST", "/auth/refresh", { cookie: reg.cookie });
     check(race.status === 200, `parallel-tab refresh tolerated, got ${race.status}`);
     console.log("✓ Two tabs refreshing at once don't log the user out (grace window)");
 
-    // Replay after the grace window = theft → whole family revoked
     await RefreshToken.updateOne(
       { revokedReason: "rotated", user: reg.json.data.user._id },
       { revokedAt: new Date(Date.now() - 5 * 60 * 1000) }
@@ -103,7 +97,6 @@ const run = async () => {
     check(afterLogout.status === 401, `refresh after logout 401, got ${afterLogout.status}`);
     console.log("✓ Logout revokes the refresh token and clears the cookie");
 
-    /* ---------------- Profile ---------------- */
     const s = await call("POST", "/auth/login", { body: { email, password: "FirstPass1" } });
     let token = s.json.data.token;
 
@@ -123,14 +116,12 @@ const run = async () => {
     check(emailChange.status === 400, `email in profile update 400, got ${emailChange.status}`);
     console.log("✓ Profile rejects avatar URLs, role and email changes (400)");
 
-    /* ---------------- Avatar upload ---------------- */
     const put = (bytes, type = "image/webp", auth = token) =>
       fetch(`${base}/auth/me/avatar`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${auth}`, "Content-Type": type },
         body: bytes,
       });
-    // Minimal WebP header + padding (the API checks magic bytes, not decodability)
     const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBPVP8 "), Buffer.alloc(200, 7)]);
     const up = await put(webp);
     const upJson = await up.json();
@@ -168,7 +159,6 @@ const run = async () => {
     }
     console.log("✓ /auth/me never exposes password, token version or reset fields");
 
-    /* ---------------- Change password ---------------- */
     const wrongCurrent = await call("PATCH", "/auth/change-password", {
       token,
       body: { currentPassword: "Nope12345", newPassword: "SecondPass2" },
@@ -197,7 +187,6 @@ const run = async () => {
     check(oldPwd.status === 401, "old password no longer works");
     console.log("✓ Change password: needs current password, kills old tokens on every device, keeps this one signed in");
 
-    /* ---------------- Forgot / reset ---------------- */
     clearOutbox();
     const unknown = await call("POST", "/auth/forgot-password", { body: { email: `nobody_${stamp}@example.com` } });
     const known = await call("POST", "/auth/forgot-password", { body: { email } });
@@ -235,7 +224,6 @@ const run = async () => {
     check(expired.status === 400, `expired link 400, got ${expired.status}`);
     console.log("✓ Expired reset link is rejected");
 
-    /* ---------------- Demo account protection ---------------- */
     process.env.DEMO_PROTECTED_EMAILS = "student@edubatch.com";
     const demo = await call("POST", "/auth/login", { body: { email: "student@edubatch.com", password: "Student@123" } });
     const demoChange = await call("PATCH", "/auth/change-password", {
@@ -249,7 +237,6 @@ const run = async () => {
     delete process.env.DEMO_PROTECTED_EMAILS;
     console.log("✓ Shared demo accounts can't have their password changed or reset");
 
-    /* ---------------- Admin user management ---------------- */
     const admin = await call("POST", "/auth/login", { body: { email: "admin@edubatch.com", password: "Admin@123" } });
     const adminToken = admin.json.data.token;
     const studentToken = demo.json.data.token;
@@ -315,7 +302,6 @@ const run = async () => {
     check(self.status === 400, `admin can't deactivate self, got ${self.status}`);
     console.log("✓ Deactivation guards: not yourself, not admins, not a teacher who still has open batches");
 
-    /* ---------------- Dashboards ---------------- */
     const tDash = await call("GET", "/dashboard/teacher", { token: tLogin.json.data.token });
     check(Array.isArray(tDash.json.data.upcomingClasses), "teacher dashboard has upcomingClasses");
     check(
@@ -324,7 +310,6 @@ const run = async () => {
     );
     console.log("✓ Teacher dashboard lists upcoming classes from the batch schedule");
 
-    // Revenue is frozen at the amount received, even if the fee changes later
     const stuEmail = `payer_${stamp}@example.com`;
     const payer = await call("POST", "/users", {
       token: adminToken,
@@ -348,7 +333,15 @@ const run = async () => {
     check(afterDrop === afterPay, `dropping a paid student keeps revenue (${afterDrop} vs ${afterPay})`);
     console.log("✓ Revenue = money received: unaffected by later fee edits or dropping a paid student");
 
-    /* ---------------- Deactivation ends sessions ---------------- */
+    const analytics = await call("GET", "/dashboard/admin/analytics?months=6", { token: adminToken });
+    check(analytics.status === 200 && analytics.json.data.months.length === 6, "analytics returns 6 months");
+    const thisMonth = analytics.json.data.months.at(-1);
+    check(thisMonth.offline >= 2000 && thisMonth.revenue >= thisMonth.offline, "this month's offline revenue includes the paid seat");
+    check(analytics.json.data.months.every((m) => /^\d{4}-\d{2}$/.test(m.month) && m.label), "month keys and labels");
+    const denied2 = await call("GET", "/dashboard/admin/analytics", { token: tLogin.json.data.token });
+    check(denied2.status === 403, `teacher can't read analytics, got ${denied2.status}`);
+    console.log("✓ Admin analytics: month-by-month revenue, enrollments, attendance; admin only");
+
     const pLogin = await call("POST", "/auth/login", { body: { email: stuEmail, password: "PayerPass1" } });
     const deact = await call("PATCH", `/users/${payer.json.data.user._id}/status`, {
       token: adminToken,
@@ -368,7 +361,6 @@ const run = async () => {
     check(react.status === 200 && react.json.data.user.isActive, "reactivated");
     console.log("✓ Deactivating a user ends their sessions immediately; reactivating restores login");
 
-    /* ---------------- logout-all ---------------- */
     const d1 = await call("POST", "/auth/login", { body: { email, password: "ThirdPass3" } });
     const d2 = await call("POST", "/auth/login", { body: { email, password: "ThirdPass3" } });
     const all = await call("POST", "/auth/logout-all", { token: d1.json.data.token });

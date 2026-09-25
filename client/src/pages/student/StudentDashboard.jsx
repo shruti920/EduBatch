@@ -15,9 +15,8 @@ import { firstName, formatDate, formatINR, percent } from "../../utils/format";
 const StudentDashboard = () => {
   const { user } = useAuth();
   const { data, error, loading, reload } = useApi(getStudentDashboard, "student-dashboard");
-  const { pay, payingId } = usePayFee({ onPaid: reload });
+  const { pay, payingId, labelFor } = usePayFee({ onPaid: reload });
   const notices = useApi(() => getNotices({ limit: 3 }), "dashboard-notices");
-  // Pinned notices always come back first; the dashboard shows the top 3
   const latestNotices = (notices.data?.notices || []).slice(0, 3);
   const enrollments = data?.enrollments || [];
 
@@ -108,8 +107,8 @@ const StudentDashboard = () => {
                     ]}
                   >
                     {e.paymentStatus === "pending" && (
-                      <Button onClick={() => pay(e)} disabled={Boolean(payingId)} className="py-1.5">
-                        {payingId === e._id ? "Opening…" : `Pay ${formatINR(e.batch.fee)}`}
+                      <Button onClick={() => pay(e)} disabled={payingId === e._id} className="py-1.5">
+                        {labelFor(e._id, `Pay ${formatINR(e.batch.fee)}`)}
                       </Button>
                     )}
                     <Link to="/attendance" className="self-center text-ink underline underline-offset-2">

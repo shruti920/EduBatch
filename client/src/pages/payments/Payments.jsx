@@ -19,7 +19,6 @@ const STATUS_TABS = [
   { key: "created", label: "Not completed" },
 ];
 
-/* Shared history table. `showStudent` adds the student column for admins. */
 const PaymentAction = ({ payment: p, onReceipt, onSync, syncingId }) =>
   p.status === "paid" ? (
     <button type="button" onClick={() => onReceipt(p)} className="text-ink underline underline-offset-2">
@@ -39,7 +38,6 @@ const PaymentAction = ({ payment: p, onReceipt, onSync, syncingId }) =>
 
 const PaymentTable = ({ payments, showStudent, onReceipt, onSync, syncingId }) => (
   <>
-    {/* Phones: one card per payment */}
     <ul className="divide-y divide-paper-border md:hidden">
       {payments.map((p) => (
         <li key={p._id} className="space-y-1.5 px-4 py-3">
@@ -125,7 +123,6 @@ const useSync = (reload) => {
   return { sync, syncingId };
 };
 
-/* =================== Student =================== */
 
 const StudentPayments = () => {
   const history = useApi(() => getPaymentHistory(), "my-payments");
@@ -134,7 +131,7 @@ const StudentPayments = () => {
     history.reload();
     dashboard.reload();
   };
-  const { pay, payingId } = usePayFee({ onPaid: reloadAll });
+  const { pay, payingId, labelFor } = usePayFee({ onPaid: reloadAll });
   const { sync, syncingId } = useSync(reloadAll);
   const [receipt, setReceipt] = useState(null);
 
@@ -162,8 +159,8 @@ const StudentPayments = () => {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-lg font-semibold tabular-nums text-attention">{formatINR(e.batch.fee)}</span>
-                  <Button onClick={() => pay(e)} disabled={Boolean(payingId)}>
-                    {payingId === e._id ? "Opening…" : "Pay now"}
+                  <Button onClick={() => pay(e)} disabled={payingId === e._id}>
+                    {labelFor(e._id, "Pay now")}
                   </Button>
                 </div>
               </li>
@@ -187,7 +184,6 @@ const StudentPayments = () => {
   );
 };
 
-/* =================== Admin =================== */
 
 const AdminPayments = () => {
   const [status, setStatus] = useState("all");

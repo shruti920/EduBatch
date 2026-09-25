@@ -14,6 +14,7 @@ import {
 } from "../../components/ui";
 import { getAdminDashboard } from "../../api/dashboardApi";
 import UpcomingClasses from "../../components/dashboard/UpcomingClasses";
+import AdminAnalytics from "../../components/dashboard/AdminAnalytics";
 import { useApi } from "../../hooks/useApi";
 import { formatINR } from "../../utils/format";
 
@@ -75,6 +76,8 @@ const AdminDashboard = () => {
               },
             ]}
           />
+
+          <AdminAnalytics />
 
           <UpcomingClasses
             title="Today's classes"

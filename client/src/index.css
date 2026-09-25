@@ -1,58 +1,43 @@
 @import "tailwindcss";
 
-/*
- * EduBatch "Register" theme.
- * The product is built around one object every coaching student knows: the ruled
- * exercise notebook. Cool white paper with pale blue rules, a red margin line,
- * blue pen ink, and a highlighter for whatever needs attention today.
- * Token names are kept from v1 so every component recolours from here.
- */
 @theme {
   --font-serif: "Newsreader", Georgia, Cambria, serif;
   --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Ink — blue ballpoint. Primary actions, links, headings */
   --color-ink: #1f3494;
   --color-ink-900: #16246a;
   --color-ink-700: #2a43b3;
   --color-ink-500: #6a7fcf;
   --color-ink-100: #e5eaf8;
 
-  /* Paper — notebook page. Cool, not cream */
   --color-paper: #f4f6fa;
   --color-paper-border: #d9e0ec;
   --color-paper-muted: #e9edf5;
 
-  /* Rules and margin — the notebook's own structure */
   --color-rule: #c9d5ec;
   --color-margin: #de4f5a;
 
-  /* Highlighter (named marigold in v1) — today, unread, active nav */
   --color-marigold: #f5d73a;
   --color-marigold-dark: #6f5800;
   --color-marigold-bg: #fff8d1;
   --color-marigold-border: #ecd66b;
 
-  /* Present / paid */
   --color-forest: #257a4e;
   --color-forest-dark: #175534;
   --color-forest-bg: #eaf6ef;
   --color-forest-border: #a6d7ba;
 
-  /* Absent / pending / errors — margin red, a little deeper for text */
   --color-attention: #c2333d;
   --color-attention-dark: #8a1f28;
   --color-attention-bg: #fdeff0;
   --color-attention-border: #f1b4ba;
 
-  /* Text — graphite */
   --color-ink-text: #232838;
   --color-ink-muted: #5a6278;
 
   --radius-sheet: 10px;
   --radius-card: 8px;
 
-  /* Shadows are tinted with ink, never neutral grey */
   --shadow-sheet: 0 1px 0 rgb(31 52 148 / 0.04), 0 10px 24px -18px rgb(31 52 148 / 0.35);
   --shadow-lift: 0 1px 0 rgb(31 52 148 / 0.05), 0 18px 36px -20px rgb(31 52 148 / 0.45);
 }
@@ -66,7 +51,6 @@
     font-feature-settings: "tnum" 0;
   }
 
-  /* One consistent, visible keyboard focus style: blue ink ring on a highlighter halo */
   :focus-visible {
     outline: 2px solid var(--color-ink-700);
     outline-offset: 2px;
@@ -85,7 +69,6 @@
 }
 
 @layer components {
-  /* Ruled notebook paper. Line pitch matches a 32px rhythm. */
   .paper-ruled {
     background-color: var(--color-paper);
     background-image: repeating-linear-gradient(
@@ -96,7 +79,6 @@
       rgb(201 213 236 / 0.55) 32px
     );
   }
-  /* Same, fainter — behind dense dashboard content */
   .paper-ruled-faint {
     background-color: var(--color-paper);
     background-image: repeating-linear-gradient(
@@ -108,7 +90,6 @@
     );
     background-attachment: fixed;
   }
-  /* Double red margin rule down the right edge (sidebar = the notebook margin) */
   .margin-rule-right {
     position: relative;
   }
@@ -124,7 +105,6 @@
     pointer-events: none;
   }
 
-  /* Rubber stamp: used for PAID on receipts and the login composition */
   .stamp {
     display: inline-block;
     border: 2px solid currentColor;
@@ -135,24 +115,35 @@
     transform: rotate(-8deg);
     mix-blend-mode: multiply;
     opacity: 0.85;
-    /* Slightly uneven ink, like a real stamp */
     mask-image: radial-gradient(circle at 30% 40%, #000 60%, rgb(0 0 0 / 0.75) 100%);
   }
 }
 
-/* Receipt printing: only the receipt is printed, nothing else on the page */
+.print-only {
+  display: none;
+}
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4;
+    margin: 14mm;
   }
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
   }
-  .print-area {
-    position: absolute;
-    inset: 0;
-    padding: 2rem;
+  #root,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+    max-width: 170mm;
+    margin: 0 auto;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 
