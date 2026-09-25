@@ -1,4 +1,5 @@
 import { Button, Modal } from "../ui";
+import { Logo } from "../brand/Logo";
 import { formatDate, formatINR } from "../../utils/format";
 
 const METHOD_LABEL = { upi: "UPI", card: "Card", netbanking: "Net banking", wallet: "Wallet", emi: "EMI" };
@@ -27,11 +28,14 @@ const ReceiptModal = ({ payment, onClose }) => (
   >
     {payment && (
       <div className="print-area">
-        <div className="flex items-baseline justify-between border-b-2 border-ink pb-3">
-          <p className="font-serif text-2xl font-semibold text-ink">EduBatch</p>
+        <div className="flex items-center justify-between border-b border-margin pb-3">
+          <Logo size={26} textClassName="text-xl" />
           <p className="text-sm text-ink-muted">Receipt {payment.receipt}</p>
         </div>
-        <p className="mt-4 text-3xl font-semibold tabular-nums text-forest">{formatINR(payment.amount / 100)}</p>
+        <div className="relative">
+          <p className="mt-4 text-3xl font-semibold tabular-nums text-ink">{formatINR(payment.amount / 100)}</p>
+          <span className="stamp absolute top-1 right-2 text-lg text-forest">PAID</span>
+        </div>
         <p className="text-sm text-ink-muted">Paid on {formatDate(payment.paidAt)}</p>
         <dl className="mt-4">
           <Row label="Student">{payment.student?.name}</Row>

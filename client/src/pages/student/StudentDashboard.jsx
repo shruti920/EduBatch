@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import BatchCard from "../../components/batches/BatchCard";
 import UpcomingClasses from "../../components/dashboard/UpcomingClasses";
+import AttendanceRing from "../../components/dashboard/AttendanceRing";
 import { getStudentDashboard } from "../../api/dashboardApi";
 import { useAuth } from "../../context/AuthContext";
 import { useApi } from "../../hooks/useApi";
@@ -43,6 +44,7 @@ const StudentDashboard = () => {
                   ? `${data.attendance.attended} of ${data.attendance.total} classes`
                   : "No classes recorded yet",
                 tone: data.attendance.rate !== null && data.attendance.rate < 75 ? "attention" : undefined,
+                visual: <AttendanceRing rate={data.attendance.total ? data.attendance.rate : null} />,
               },
               {
                 label: "Fees due",

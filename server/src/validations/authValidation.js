@@ -27,13 +27,6 @@ export const newPassword = z
   .regex(/[A-Za-z]/, "Password must include a letter")
   .regex(/[0-9]/, "Password must include a number");
 
-// Avatar is an image URL. Only https so a profile can't embed javascript: or mixed content.
-const avatar = z
-  .string()
-  .trim()
-  .max(500, "Avatar URL is too long")
-  .refine((v) => v === "" || /^https:\/\/[^\s]+$/i.test(v), "Avatar must be an https:// image URL");
-
 export const registerSchema = z.object({
   name,
   email,
@@ -47,7 +40,8 @@ export const loginSchema = z.object({
 });
 
 export const updateProfileSchema = z
-  .object({ name, phone, avatar })
+  // Avatar is set by uploading a photo (PUT /auth/me/avatar), not by URL
+  .object({ name, phone })
   .partial()
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update" });

@@ -12,6 +12,7 @@ import attendanceRoutes from "./routes/attendance.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import paymentRoutes from "./routes/payments.js";
 import noticeRoutes from "./routes/notices.js";
+import avatarRoutes from "./routes/avatars.js";
 import { handleWebhook } from "./controllers/paymentController.js";
 
 const app = express();
@@ -59,6 +60,7 @@ app.use("/api/v1/attendance", attendanceRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/payments", paymentRoutes);
 app.use("/api/v1/notices", noticeRoutes);
+app.use("/api/v1/avatars", avatarRoutes);
 
 app.all("{*path}", (req, res, next) => {
   next(new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404));

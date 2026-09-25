@@ -46,20 +46,20 @@ const inr = (rupees) => `₹${Number(rupees || 0).toLocaleString("en-IN", { maxi
 
 // Minimal, inline-styled layout that renders in every mail client
 const layout = (title, bodyHtml) => `<!doctype html>
-<html><body style="margin:0;background:#f6f4ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
+<html><body style="margin:0;background:#f4f6fa;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px">
 <tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #e5e1d8;border-radius:6px">
-<tr><td style="padding:20px 24px;border-bottom:2px solid #1f2a44;font-family:Georgia,serif;font-size:20px;font-weight:bold;color:#1f2a44">EduBatch</td></tr>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border:1px solid #d9e0ec;border-radius:6px">
+<tr><td style="padding:20px 24px;border-bottom:1px solid #de4f5a;font-family:Georgia,serif;font-size:20px;font-weight:bold;color:#1f3494"><span style="display:inline-block;width:26px;height:26px;line-height:26px;margin-right:8px;border:2px solid #1f3494;border-radius:6px;text-align:center;font-size:16px">E</span>EduBatch</td></tr>
 <tr><td style="padding:24px">
-<h1 style="margin:0 0 12px;font-size:20px;color:#1f2a44">${escapeHtml(title)}</h1>
+<h1 style="margin:0 0 12px;font-size:20px;color:#1f3494">${escapeHtml(title)}</h1>
 ${bodyHtml}
 </td></tr>
-<tr><td style="padding:16px 24px;border-top:1px solid #e5e1d8;font-size:12px;color:#6b7280">This is an automated message from EduBatch. Please don't reply.</td></tr>
+<tr><td style="padding:16px 24px;border-top:1px solid #d9e0ec;font-size:12px;color:#6b7280">This is an automated message from EduBatch. Please don't reply.</td></tr>
 </table></td></tr></table></body></html>`;
 
 const button = (href, label) =>
-  `<p style="margin:20px 0"><a href="${escapeHtml(href)}" style="background:#1f2a44;color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;display:inline-block">${escapeHtml(label)}</a></p>`;
+  `<p style="margin:20px 0"><a href="${escapeHtml(href)}" style="background:#1f3494;color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;display:inline-block">${escapeHtml(label)}</a></p>`;
 
 const row = (label, value) =>
   `<tr><td style="padding:6px 0;color:#6b7280;font-size:14px">${escapeHtml(label)}</td><td style="padding:6px 0;text-align:right;font-size:14px;font-weight:bold">${escapeHtml(value)}</td></tr>`;
@@ -179,7 +179,7 @@ export const sendPaymentReceiptEmail = (payment) => {
     html: layout(
       "Payment received",
       `<p>Hi ${escapeHtml(student.name)}, we received your fee payment.</p>
-       <table role="presentation" width="100%" style="border-top:1px solid #e5e1d8;margin-top:8px">
+       <table role="presentation" width="100%" style="border-top:1px solid #d9e0ec;margin-top:8px">
        ${row("Receipt", payment.receipt)}${row("Batch", batch?.name || "—")}${row("Amount", amount)}${row("Paid on", paidOn)}
        ${row("Payment ID", payment.razorpayPaymentId || "—")}${row("Order ID", payment.razorpayOrderId)}
        </table>

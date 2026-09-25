@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { GraduationCap, Presentation, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Button, Field, Notice, PasswordInput, inputClass } from "../components/ui";
 import { useSlowFlag } from "../hooks/useUi";
@@ -7,9 +8,9 @@ import AuthShell from "./AuthShell";
 
 // Seeded by `npm run seed` in /server — shown so reviewers can sign in quickly
 const DEMO_ACCOUNTS = [
-  { role: "Admin", email: "admin@edubatch.com", password: "Admin@123" },
-  { role: "Teacher", email: "teacher@edubatch.com", password: "Teacher@123" },
-  { role: "Student", email: "student@edubatch.com", password: "Student@123" },
+  { role: "Admin", email: "admin@edubatch.com", password: "Admin@123", icon: ShieldCheck },
+  { role: "Teacher", email: "teacher@edubatch.com", password: "Teacher@123", icon: Presentation },
+  { role: "Student", email: "student@edubatch.com", password: "Student@123", icon: GraduationCap },
 ];
 
 const Login = () => {
@@ -88,23 +89,33 @@ const Login = () => {
         )}
       </form>
 
-      <div className="mt-6 border-t border-paper-border pt-4">
-        <p className="text-sm text-ink-muted">Demo accounts</p>
-        <div className="mt-2 grid grid-cols-3 gap-2">
-          {DEMO_ACCOUNTS.map((acc) => (
-            <button
-              key={acc.role}
-              type="button"
-              onClick={() => {
-                setEmail(acc.email);
-                setPassword(acc.password);
-                setError("");
-              }}
-              className="rounded border border-paper-border px-2 py-2 text-sm text-ink hover:border-ink"
-            >
-              {acc.role}
-            </button>
-          ))}
+      <div className="mt-8">
+        <p className="text-sm font-medium text-ink-text">Try a demo account</p>
+        <p className="text-xs text-ink-muted">Fills in the form. Each role sees a different app.</p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {DEMO_ACCOUNTS.map(({ role, email: demoEmail, password: demoPassword, icon: Icon }) => {
+            const selected = email === demoEmail;
+            return (
+              <button
+                key={role}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => {
+                  setEmail(demoEmail);
+                  setPassword(demoPassword);
+                  setError("");
+                }}
+                className={`flex flex-col items-start gap-2 rounded-[var(--radius-card)] border px-3 py-2.5 text-left text-sm transition-colors ${
+                  selected
+                    ? "border-ink bg-ink-100 text-ink"
+                    : "border-paper-border bg-white text-ink-text hover:border-ink-500"
+                }`}
+              >
+                <Icon size={18} aria-hidden="true" className="text-ink" />
+                <span className="font-medium">{role}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </AuthShell>

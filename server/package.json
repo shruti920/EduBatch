@@ -2,11 +2,11 @@
   "name": "edubatch-server",
   "version": "1.0.0",
   "private": true,
-  "description": "EduBatch REST API — Express, MongoDB, JWT",
+  "description": "EduBatch REST API \u2014 Express, MongoDB, JWT",
   "type": "module",
   "main": "src/server.js",
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "nodemon src/server.js",

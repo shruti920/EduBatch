@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
     phone: { type: String, trim: true, default: "" },
-    // Image URL (https). Uploads are out of MVP scope; see README.
+    // Path to the uploaded photo (/api/v1/avatars/...), or "" for initials
     avatar: { type: String, trim: true, default: "" },
     isActive: { type: Boolean, default: true },
     // Notices posted after this moment count as unread (null = everything unread)

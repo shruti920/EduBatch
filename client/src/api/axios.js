@@ -40,7 +40,7 @@ export const refreshSession = () => {
   if (!refreshing) {
     refreshing = api
       // Long timeout: the first call after the free Render instance slept can take ~60s
-      .post("/auth/refresh", null, { skipAuthRefresh: true, timeout: 75000 })
+      .post("/auth/refresh", {}, { skipAuthRefresh: true, timeout: 75000 })
       .then((res) => {
         setAccessToken(res.data.data.token);
         return res.data.data;

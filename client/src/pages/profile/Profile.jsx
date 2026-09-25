@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "../../components/layout/DashboardLayout";
-import Avatar from "../../components/Avatar";
+import AvatarEditor from "../../components/profile/AvatarEditor";
 import { Button, ConfirmDialog, Field, PageHeader, PasswordInput, Pill, Section, inputClass } from "../../components/ui";
 import { changePassword, logoutAllDevices, updateProfile } from "../../api/authApi";
 import { useAuth } from "../../context/AuthContext";
@@ -13,11 +13,11 @@ const ROLE_LABEL = { admin: "Admin", teacher: "Teacher", student: "Student" };
 
 const DetailsForm = ({ user, onSaved }) => {
   const toast = useToast();
-  const [form, setForm] = useState({ name: user.name || "", phone: user.phone || "", avatar: user.avatar || "" });
+  const [form, setForm] = useState({ name: user.name || "", phone: user.phone || "" });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
-  const dirty = form.name !== (user.name || "") || form.phone !== (user.phone || "") || form.avatar !== (user.avatar || "");
+  const dirty = form.name !== (user.name || "") || form.phone !== (user.phone || "");
   const update = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
@@ -25,13 +25,12 @@ const DetailsForm = ({ user, onSaved }) => {
     const next = {};
     if (form.name.trim().length < 2) next.name = "Enter your full name.";
     if (!isPhone(form.phone)) next.phone = "Enter a valid phone number.";
-    if (form.avatar.trim() && !/^https:\/\/\S+$/i.test(form.avatar.trim())) next.avatar = "Use an https:// image link.";
     setErrors(next);
     if (Object.keys(next).length) return;
 
     setSaving(true);
     try {
-      const saved = await updateProfile({ name: form.name.trim(), phone: form.phone.trim(), avatar: form.avatar.trim() });
+      const saved = await updateProfile({ name: form.name.trim(), phone: form.phone.trim() });
       onSaved(saved);
       toast.success("Profile updated.");
     } catch (err) {
@@ -45,34 +44,16 @@ const DetailsForm = ({ user, onSaved }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 p-4" noValidate>
-      <div className="flex items-center gap-4">
-        <Avatar name={form.name || user.name} src={form.avatar.trim()} size="lg" />
-        <div className="min-w-0 text-sm">
-          <p className="truncate font-medium text-ink">{user.email}</p>
-          <p className="text-ink-muted">Email can't be changed. Ask an admin if it's wrong.</p>
-        </div>
+      <AvatarEditor user={user} onChange={onSaved} />
+      <div className="text-sm">
+        <p className="truncate font-medium text-ink">{user.email}</p>
+        <p className="text-ink-muted">Email can&apos;t be changed. Ask an admin if it&apos;s wrong.</p>
       </div>
       <Field label="Full name" htmlFor="name" error={errors.name}>
         <input id="name" name="name" value={form.name} onChange={update} className={inputClass} autoComplete="name" />
       </Field>
       <Field label="Phone" htmlFor="phone" error={errors.phone} hint="Optional">
         <input id="phone" name="phone" value={form.phone} onChange={update} className={inputClass} autoComplete="tel" />
-      </Field>
-      <Field
-        label="Avatar image URL"
-        htmlFor="avatar"
-        error={errors.avatar}
-        hint="Optional. A public https:// link to a square image. Leave empty to show your initials."
-      >
-        <input
-          id="avatar"
-          name="avatar"
-          value={form.avatar}
-          onChange={update}
-          className={inputClass}
-          placeholder="https://…"
-          inputMode="url"
-        />
       </Field>
       <div className="flex justify-end">
         <Button type="submit" disabled={saving || !dirty}>

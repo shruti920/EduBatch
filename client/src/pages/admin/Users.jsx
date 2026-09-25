@@ -311,7 +311,7 @@ const Users = () => {
             {pagination && pagination.pages > 1 && (
               <div className="flex items-center justify-between border-t border-paper-border px-4 py-3 text-sm">
                 <span className="text-ink-muted">
-                  Page {pagination.page} of {pagination.pages} · {pagination.total} users
+                  Page {pagination.page} of {pagination.pages}, {pagination.total} users
                 </span>
                 <div className="flex gap-2">
                   <Button variant="secondary" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>

@@ -1,18 +1,17 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, postLoginPath } from "../context/AuthContext";
-import { Loading } from "./ui";
+import { LogoMark } from "./brand/Logo";
 import { useSlowFlag } from "../hooks/useUi";
 
+// Quiet loader for returning visitors (the intro preloader covers first visits)
 const FullPageLoading = () => {
   const slow = useSlowFlag(true);
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-paper px-4 text-center">
-      <Loading label="Checking your session…" />
-      {slow && (
-        <p className="-mt-6 max-w-sm text-sm text-ink-muted">
-          Starting the server. This can take up to a minute after a quiet period.
-        </p>
-      )}
+    <div className="paper-ruled flex min-h-screen flex-col items-center justify-center px-4 text-center" role="status">
+      <LogoMark size={40} draw className="text-ink" />
+      <p className="mt-4 text-sm text-ink-muted">
+        {slow ? "Waking the server. The first visit after a quiet spell can take up to a minute." : "Opening your register…"}
+      </p>
     </div>
   );
 };
