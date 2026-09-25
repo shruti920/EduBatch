@@ -134,7 +134,7 @@ const StudentPayments = () => {
     history.reload();
     dashboard.reload();
   };
-  const { pay, payingId } = usePayFee({ onPaid: reloadAll });
+  const { pay, payingId, labelFor } = usePayFee({ onPaid: reloadAll });
   const { sync, syncingId } = useSync(reloadAll);
   const [receipt, setReceipt] = useState(null);
 
@@ -162,8 +162,8 @@ const StudentPayments = () => {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-lg font-semibold tabular-nums text-attention">{formatINR(e.batch.fee)}</span>
-                  <Button onClick={() => pay(e)} disabled={Boolean(payingId)}>
-                    {payingId === e._id ? "Opening…" : "Pay now"}
+                  <Button onClick={() => pay(e)} disabled={payingId === e._id}>
+                    {labelFor(e._id, "Pay now")}
                   </Button>
                 </div>
               </li>

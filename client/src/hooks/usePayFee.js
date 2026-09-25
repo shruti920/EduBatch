@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useToast } from "../context/ToastContext";
 import { createPaymentOrder, reportPaymentFailure, verifyPayment } from "../api/paymentApi";
 import { loadRazorpayCheckout } from "../utils/razorpay";
@@ -11,10 +11,21 @@ import { errorMessage, formatINR } from "../utils/format";
  */
 export const usePayFee = ({ onPaid } = {}) => {
   const toast = useToast();
+  // Which fee is in progress, and whether its Checkout is still loading or already open.
+  // Only that fee's button changes; the others stay normal.
   const [payingId, setPayingId] = useState(null);
+  const [phase, setPhase] = useState(null); // "opening" | "open" | null
+  // Synchronous lock: a double tap, or a tap on another fee, can't start a second checkout
+  const busy = useRef(false);
 
   const pay = async (enrollment) => {
+    if (busy.current) {
+      toast.error("Finish or close the payment that's already open first.");
+      return;
+    }
+    busy.current = true;
     setPayingId(enrollment._id);
+    setPhase("opening");
 
     let order;
     let Razorpay;
@@ -22,14 +33,18 @@ export const usePayFee = ({ onPaid } = {}) => {
       [order, Razorpay] = await Promise.all([createPaymentOrder(enrollment._id), loadRazorpayCheckout()]);
     } catch (err) {
       toast.error(errorMessage(err));
+      busy.current = false;
       setPayingId(null);
+      setPhase(null);
       return;
     }
 
     let settled = false;
     const finish = ({ tone, text }) => {
       settled = true;
+      busy.current = false;
       setPayingId(null);
+      setPhase(null);
       if (tone === "success") toast.success(text);
       else toast.error(text);
     };
@@ -40,10 +55,10 @@ export const usePayFee = ({ onPaid } = {}) => {
       amount: order.amount,
       currency: order.currency,
       name: "EduBatch",
-      description: `Fee · ${order.batchName}`,
+      description: `${order.batchName} fee`,
       prefill: order.prefill,
       notes: { enrollmentId: enrollment._id },
-      theme: { color: "#1B2A4A" },
+      theme: { color: "#1F3494" },
       retry: { enabled: true },
       modal: {
         // Off on purpose: Razorpay's close-confirmation can show as a native browser
@@ -86,7 +101,11 @@ export const usePayFee = ({ onPaid } = {}) => {
     });
 
     checkout.open();
+    setPhase("open");
   };
 
-  return { pay, payingId };
+  /** Label for one fee's button */
+  const labelFor = (id, idle) => (id !== payingId ? idle : phase === "opening" ? "Opening…" : "Paying…");
+
+  return { pay, payingId, labelFor };
 };
