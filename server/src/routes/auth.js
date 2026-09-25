@@ -12,6 +12,7 @@ import {
   updateMe,
 } from "../controllers/authController.js";
 import { protect, requireXhrHeader } from "../middleware/auth.js";
+import { AVATAR_MAX_BYTES, deleteAvatar, uploadAvatar } from "../controllers/avatarController.js";
 import { validateBody } from "../middleware/validate.js";
 import {
   authLimiter,
@@ -46,5 +47,13 @@ router.get("/me", protect, getMe);
 router.patch("/me", protect, validateBody(updateProfileSchema), updateMe);
 router.patch("/change-password", protect, changePasswordLimiter, validateBody(changePasswordSchema), changePassword);
 router.post("/logout-all", protect, logoutAll);
+// Raw image bytes (the browser sends a cropped 256x256 WebP). Type is checked from the bytes.
+router.put(
+  "/me/avatar",
+  protect,
+  express.raw({ type: ["image/webp", "image/png", "image/jpeg", "application/octet-stream"], limit: AVATAR_MAX_BYTES }),
+  uploadAvatar
+);
+router.delete("/me/avatar", protect, deleteAvatar);
 
 export default router;

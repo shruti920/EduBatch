@@ -10,6 +10,7 @@ import User from "../models/User.js";
 import Batch from "../models/Batch.js";
 import Enrollment from "../models/Enrollment.js";
 import RefreshToken from "../models/RefreshToken.js";
+import Avatar from "../models/Avatar.js";
 import { clearOutbox, getOutbox } from "../services/emailService.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -108,19 +109,58 @@ const run = async () => {
 
     const upd = await call("PATCH", "/auth/me", {
       token,
-      body: { name: "Renamed Tester", phone: "+91 90000 11111", avatar: "https://example.com/a.png" },
+      body: { name: "Renamed Tester", phone: "+91 90000 11111" },
     });
     check(upd.status === 200 && upd.json.data.user.name === "Renamed Tester", "profile updated");
-    check(upd.json.data.user.avatar === "https://example.com/a.png", "avatar saved");
-    console.log("✓ Profile: name, phone and avatar update");
+    check(upd.json.data.user.phone === "+91 90000 11111", "phone saved");
+    console.log("✓ Profile: name and phone update");
 
-    const badAvatar = await call("PATCH", "/auth/me", { token, body: { avatar: "javascript:alert(1)" } });
-    check(badAvatar.status === 400, `non-https avatar 400, got ${badAvatar.status}`);
+    const urlAvatar = await call("PATCH", "/auth/me", { token, body: { avatar: "javascript:alert(1)" } });
+    check(urlAvatar.status === 400, `avatar can't be set by URL, got ${urlAvatar.status}`);
     const roleEsc = await call("PATCH", "/auth/me", { token, body: { role: "admin" } });
     check(roleEsc.status === 400, `role in profile update 400, got ${roleEsc.status}`);
     const emailChange = await call("PATCH", "/auth/me", { token, body: { email: "x@y.com" } });
     check(emailChange.status === 400, `email in profile update 400, got ${emailChange.status}`);
-    console.log("✓ Profile rejects javascript: avatars, role and email changes (400)");
+    console.log("✓ Profile rejects avatar URLs, role and email changes (400)");
+
+    /* ---------------- Avatar upload ---------------- */
+    const put = (bytes, type = "image/webp", auth = token) =>
+      fetch(`${base}/auth/me/avatar`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${auth}`, "Content-Type": type },
+        body: bytes,
+      });
+    // Minimal WebP header + padding (the API checks magic bytes, not decodability)
+    const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBPVP8 "), Buffer.alloc(200, 7)]);
+    const up = await put(webp);
+    const upJson = await up.json();
+    check(up.status === 200, `avatar upload 200, got ${up.status}`);
+    const avatarUrl = upJson.data.user.avatar;
+    check(/^\/api\/v1\/avatars\/[a-f0-9]{24}\/[a-f0-9]{24}\.webp$/.test(avatarUrl), `avatar url shape: ${avatarUrl}`);
+    const img = await fetch(`http://127.0.0.1:${server.address().port}${avatarUrl}`);
+    const imgBytes = Buffer.from(await img.arrayBuffer());
+    check(img.status === 200 && img.headers.get("content-type") === "image/webp", "avatar served as image/webp");
+    check(imgBytes.equals(webp), "served bytes match upload");
+    check(/immutable/.test(img.headers.get("cache-control") || ""), "avatar cached immutably");
+    console.log("✓ Avatar upload stores the image and serves it with long-lived caching");
+
+    const html = await put(Buffer.from("<html><script>alert(1)</script></html>".padEnd(100, " ")), "image/png");
+    check(html.status === 400, `HTML disguised as PNG rejected, got ${html.status}`);
+    const big = await put(Buffer.concat([webp, Buffer.alloc(400 * 1024)]));
+    check(big.status === 413, `oversize upload 413, got ${big.status}`);
+    const noAuth = await put(webp, "image/webp", "bad.token.here");
+    check(noAuth.status === 401, `upload without valid token 401, got ${noAuth.status}`);
+    const guess = await fetch(`http://127.0.0.1:${server.address().port}${avatarUrl.replace(/[a-f0-9]{24}\.webp$/, "0".repeat(24) + ".webp")}`);
+    check(guess.status === 404, `guessed avatar key 404, got ${guess.status}`);
+    console.log("✓ Avatar rejects non-images by content, oversize files, no auth, and guessed URLs");
+
+    const reup = await (await put(webp)).json();
+    check(reup.data.user.avatar !== avatarUrl, "new upload gets a new URL");
+    const oldGone = await fetch(`http://127.0.0.1:${server.address().port}${avatarUrl}`);
+    check(oldGone.status === 404, `old avatar URL retired, got ${oldGone.status}`);
+    const del = await call("DELETE", "/auth/me/avatar", { token });
+    check(del.status === 200 && del.json.data.user.avatar === "", "avatar removed");
+    console.log("✓ Replacing or removing a photo retires the old URL");
 
     const me = await call("GET", "/auth/me", { token });
     for (const secret of ["password", "tokenVersion", "passwordResetTokenHash", "passwordResetExpires"]) {
@@ -345,6 +385,7 @@ const run = async () => {
     await Enrollment.deleteMany({ batch: { $in: created.batches } });
     await Batch.deleteMany({ _id: { $in: created.batches } });
     await RefreshToken.deleteMany({ user: { $in: created.users } });
+    await Avatar.deleteMany({ user: { $in: created.users } });
     await User.deleteMany({ _id: { $in: created.users } });
     await User.deleteMany({ email: { $regex: `_${stamp}@example\\.com$` } });
     server.close();

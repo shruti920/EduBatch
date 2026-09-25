@@ -33,6 +33,17 @@ const errorHandler = (err, req, res, next) => {
     errors = null;
   }
 
+  // Body-parser errors (JSON syntax, oversize uploads) are client errors, not 500s
+  if (err.type === "entity.too.large") {
+    statusCode = 413;
+    message = "That file is too large.";
+    errors = null;
+  } else if (err.type === "entity.parse.failed") {
+    statusCode = 400;
+    message = "The request body isn't valid JSON.";
+    errors = null;
+  }
+
   if (err.name === "JsonWebTokenError") {
     statusCode = 401;
     message = "Invalid token. Please log in again.";

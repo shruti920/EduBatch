@@ -123,15 +123,14 @@ export const getMe = async (req, res, next) => {
   }
 };
 
-// PATCH /auth/me — name, phone, avatar only. Email and role can't be changed here.
+// PATCH /auth/me — name and phone only. Email and role can't be changed here; photos use /auth/me/avatar.
 export const updateMe = async (req, res, next) => {
   try {
-    const { name, phone, avatar } = req.body;
+    const { name, phone } = req.body;
     const user = req.user;
 
     if (name !== undefined) user.name = name;
     if (phone !== undefined) user.phone = phone;
-    if (avatar !== undefined) user.avatar = avatar;
     await user.save();
 
     res.status(200).json({ success: true, message: "Profile updated.", data: { user: user.toJSON() } });
