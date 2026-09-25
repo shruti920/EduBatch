@@ -1,42 +1,60 @@
 @import "tailwindcss";
 
+/*
+ * EduBatch "Register" theme.
+ * The product is built around one object every coaching student knows: the ruled
+ * exercise notebook. Cool white paper with pale blue rules, a red margin line,
+ * blue pen ink, and a highlighter for whatever needs attention today.
+ * Token names are kept from v1 so every component recolours from here.
+ */
 @theme {
   --font-serif: "Newsreader", Georgia, Cambria, serif;
   --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Ink — headers, primary buttons, navigation */
-  --color-ink: #1b2a4a;
-  --color-ink-900: #121d34;
-  --color-ink-700: #253963;
-  --color-ink-500: #4667a5;
-  --color-ink-100: #e6edf8;
+  /* Ink — blue ballpoint. Primary actions, links, headings */
+  --color-ink: #1f3494;
+  --color-ink-900: #16246a;
+  --color-ink-700: #2a43b3;
+  --color-ink-500: #6a7fcf;
+  --color-ink-100: #e5eaf8;
 
-  /* Paper — page background and rules */
-  --color-paper: #f7f6f2;
-  --color-paper-border: #e3e0d8;
-  --color-paper-muted: #eeece6;
+  /* Paper — notebook page. Cool, not cream */
+  --color-paper: #f4f6fa;
+  --color-paper-border: #d9e0ec;
+  --color-paper-muted: #e9edf5;
 
-  /* Marigold — active states, upcoming, fee-due highlights */
-  --color-marigold: #d99a2b;
-  --color-marigold-dark: #8a5a10;
-  --color-marigold-bg: #fdf6e7;
-  --color-marigold-border: #efd08f;
+  /* Rules and margin — the notebook's own structure */
+  --color-rule: #c9d5ec;
+  --color-margin: #de4f5a;
 
-  /* Success — paid, present */
-  --color-forest: #2f6e4f;
-  --color-forest-dark: #1e4934;
-  --color-forest-bg: #edf7f2;
-  --color-forest-border: #a3d4bc;
+  /* Highlighter (named marigold in v1) — today, unread, active nav */
+  --color-marigold: #f5d73a;
+  --color-marigold-dark: #6f5800;
+  --color-marigold-bg: #fff8d1;
+  --color-marigold-border: #ecd66b;
 
-  /* Attention — pending, absent, overdue */
-  --color-attention: #b23a32;
-  --color-attention-dark: #7f241e;
-  --color-attention-bg: #fdf1f0;
-  --color-attention-border: #f0b0ab;
+  /* Present / paid */
+  --color-forest: #257a4e;
+  --color-forest-dark: #175534;
+  --color-forest-bg: #eaf6ef;
+  --color-forest-border: #a6d7ba;
 
-  /* Text */
-  --color-ink-text: #22242b;
-  --color-ink-muted: #5a6275;
+  /* Absent / pending / errors — margin red, a little deeper for text */
+  --color-attention: #c2333d;
+  --color-attention-dark: #8a1f28;
+  --color-attention-bg: #fdeff0;
+  --color-attention-border: #f1b4ba;
+
+  /* Text — graphite */
+  --color-ink-text: #232838;
+  --color-ink-muted: #5a6278;
+
+  --radius-sheet: 10px;
+  --radius-card: 8px;
+
+  /* Shadows are tinted with ink, never neutral grey */
+  --shadow-sheet: 0 1px 0 rgb(31 52 148 / 0.04), 0 10px 24px -18px rgb(31 52 148 / 0.35);
+  --shadow-lift: 0 1px 0 rgb(31 52 148 / 0.05), 0 18px 36px -20px rgb(31 52 148 / 0.45);
 }
 
 @layer base {
@@ -45,12 +63,19 @@
     color: var(--color-ink-text);
     background-color: var(--color-paper);
     -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum" 0;
   }
 
-  /* One consistent, visible keyboard focus style */
+  /* One consistent, visible keyboard focus style: blue ink ring on a highlighter halo */
   :focus-visible {
-    outline: 2px solid var(--color-marigold);
+    outline: 2px solid var(--color-ink-700);
     outline-offset: 2px;
+    box-shadow: 0 0 0 5px rgb(245 215 58 / 0.45);
+  }
+
+  ::selection {
+    background: rgb(245 215 58 / 0.6);
+    color: var(--color-ink-900);
   }
 
   input[type="date"],
@@ -59,7 +84,63 @@
   }
 }
 
+@layer components {
+  /* Ruled notebook paper. Line pitch matches a 32px rhythm. */
+  .paper-ruled {
+    background-color: var(--color-paper);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 31px,
+      rgb(201 213 236 / 0.55) 31px,
+      rgb(201 213 236 / 0.55) 32px
+    );
+  }
+  /* Same, fainter — behind dense dashboard content */
+  .paper-ruled-faint {
+    background-color: var(--color-paper);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 31px,
+      rgb(201 213 236 / 0.28) 31px,
+      rgb(201 213 236 / 0.28) 32px
+    );
+    background-attachment: fixed;
+  }
+  /* Double red margin rule down the right edge (sidebar = the notebook margin) */
+  .margin-rule-right {
+    position: relative;
+  }
+  .margin-rule-right::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 4px;
+    border-left: 1px solid rgb(222 79 90 / 0.55);
+    border-right: 1px solid var(--color-margin);
+    pointer-events: none;
+  }
 
+  /* Rubber stamp: used for PAID on receipts and the login composition */
+  .stamp {
+    display: inline-block;
+    border: 2px solid currentColor;
+    border-radius: 6px;
+    padding: 0.15rem 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    transform: rotate(-8deg);
+    mix-blend-mode: multiply;
+    opacity: 0.85;
+    /* Slightly uneven ink, like a real stamp */
+    mask-image: radial-gradient(circle at 30% 40%, #000 60%, rgb(0 0 0 / 0.75) 100%);
+  }
+}
+
+/* Receipt printing: only the receipt is printed, nothing else on the page */
 @media print {
   body * {
     visibility: hidden;
@@ -75,22 +156,11 @@
   }
 }
 
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.toast-enter {
-  animation: toast-in 180ms ease-out;
-}
 @media (prefers-reduced-motion: reduce) {
-  .toast-enter {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
   }
 }
