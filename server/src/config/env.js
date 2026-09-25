@@ -1,7 +1,4 @@
-/**
- * Startup checks. The API refuses to boot with a configuration that would be
- * insecure or silently broken in production (e.g. CORS falling back to localhost).
- */
+
 const isProd = () => process.env.NODE_ENV === "production";
 
 const ALWAYS_REQUIRED = ["MONGO_URI", "JWT_SECRET"];
@@ -42,11 +39,11 @@ export const validateEnv = () => {
   }
 };
 
-// Frontend base URL used in email links (reset password, login)
+
 export const appUrl = () =>
   (process.env.APP_URL || (process.env.CLIENT_URL || "http://localhost:5173").split(",")[0]).trim().replace(/\/+$/, "");
 
-// Demo accounts that reviewers share: their passwords and status can't be changed in-app
+
 export const isDemoProtected = (email = "") =>
   (process.env.DEMO_PROTECTED_EMAILS || "")
     .split(",")
