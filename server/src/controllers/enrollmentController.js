@@ -79,6 +79,7 @@ export const enrollStudent = async (req, res, next) => {
         enrolledAt: existing.enrolledAt,
         paymentStatus: existing.paymentStatus,
         amountPaid: existing.amountPaid,
+        paidAt: existing.paidAt,
       };
       existing.isActive = true;
       existing.enrolledAt = new Date();
@@ -86,6 +87,7 @@ export const enrollStudent = async (req, res, next) => {
       if (!(existing.paymentStatus === "paid" && existing.payment)) {
         existing.paymentStatus = paymentStatus;
         existing.amountPaid = amountFor(paymentStatus, batch);
+        existing.paidAt = paymentStatus === "paid" ? new Date() : null;
       }
       await existing.save();
       await confirmSeatOrRollback(batch, () =>
@@ -99,6 +101,7 @@ export const enrollStudent = async (req, res, next) => {
         batch: batch._id,
         paymentStatus,
         amountPaid: amountFor(paymentStatus, batch),
+        paidAt: paymentStatus === "paid" ? new Date() : null,
       });
       await confirmSeatOrRollback(batch, () => Enrollment.deleteOne({ _id: enrollment._id }));
     }
@@ -249,7 +252,10 @@ export const updateEnrollmentStatus = async (req, res, next) => {
     if (paymentStatus && paymentStatus !== enrollment.paymentStatus) {
       enrollment.paymentStatus = paymentStatus;
       // Online-paid fees keep their Razorpay amount; offline changes freeze or clear it
-      if (!enrollment.payment) enrollment.amountPaid = amountFor(paymentStatus, batch);
+      if (!enrollment.payment) {
+        enrollment.amountPaid = amountFor(paymentStatus, batch);
+        enrollment.paidAt = paymentStatus === "paid" ? new Date() : null;
+      }
     }
     if (isActive !== undefined) enrollment.isActive = isActive;
     await enrollment.save();

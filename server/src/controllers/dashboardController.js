@@ -234,3 +234,97 @@ export const getStudentDashboard = async (req, res, next) => {
     next(error);
   }
 };
+
+/* ---------------- Admin analytics ---------------- */
+
+const tz = () => process.env.APP_TIMEZONE || "Asia/Kolkata";
+
+// "YYYY-MM" of a moment in the institute's timezone
+const monthKeyOf = (date) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz(), year: "numeric", month: "2-digit" })
+      .formatToParts(new Date(date))
+      .map((p) => [p.type, p.value])
+  );
+  return `${parts.year}-${parts.month}`;
+};
+
+// The last `count` month keys, oldest first, ending with the current month
+const recentMonths = (count, now = new Date()) => {
+  const [y, m] = monthKeyOf(now).split("-").map(Number);
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(Date.UTC(y, m - 1 - (count - 1 - i), 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+};
+
+const monthLabel = (key) =>
+  new Date(`${key}-15T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+
+/**
+ * GET /dashboard/admin/analytics?months=6 (admin)
+ * Month by month: fees received (online/offline), new enrollments and the
+ * attendance rate across all classes marked that month.
+ */
+export const getAdminAnalytics = async (req, res, next) => {
+  try {
+    const count = Math.min(12, Math.max(3, Number.parseInt(req.query.months, 10) || 6));
+    const keys = recentMonths(count);
+    const first = new Date(`${keys[0]}-01T00:00:00Z`);
+    // A day of margin so the timezone offset never drops the first day
+    const since = new Date(first.getTime() - 24 * 60 * 60 * 1000);
+
+    const [paid, enrolled, attendance] = await Promise.all([
+      Enrollment.find({ paymentStatus: "paid" })
+        .select("amountPaid paidAt updatedAt payment batch")
+        .populate("payment", "amount status paidAt")
+        .populate("batch", "fee")
+        .lean(),
+      Enrollment.find({ enrolledAt: { $gte: since } }).select("enrolledAt").lean(),
+      Attendance.find({ date: { $gte: since } }).select("date records.status").lean(),
+    ]);
+
+    const rows = Object.fromEntries(
+      keys.map((key) => [
+        key,
+        { month: key, label: monthLabel(key), revenue: 0, online: 0, offline: 0, payments: 0, enrollments: 0, marked: 0, attended: 0 },
+      ])
+    );
+
+    paid.forEach((e) => {
+      const isOnline = Boolean(e.payment && e.payment.status === "paid");
+      const when = e.paidAt || (isOnline && e.payment.paidAt) || e.updatedAt;
+      const row = rows[monthKeyOf(when)];
+      if (!row) return;
+      const amount = e.amountPaid ?? (isOnline ? e.payment.amount / 100 : e.batch?.fee || 0);
+      row.revenue += amount;
+      row.payments += 1;
+      if (isOnline) row.online += amount;
+      else row.offline += amount;
+    });
+
+    enrolled.forEach((e) => {
+      const row = rows[monthKeyOf(e.enrolledAt)];
+      if (row) row.enrollments += 1;
+    });
+
+    // Attendance dates are stored as the local calendar day at 00:00 UTC
+    attendance.forEach((a) => {
+      const row = rows[a.date.toISOString().slice(0, 7)];
+      if (!row) return;
+      a.records.forEach((r) => {
+        row.marked += 1;
+        if (r.status === "present" || r.status === "late") row.attended += 1;
+      });
+    });
+
+    const months = keys.map((key) => {
+      const { marked, attended, ...rest } = rows[key];
+      return { ...rest, attendanceRate: marked ? Math.round((attended / marked) * 100) : null, marked };
+    });
+
+    res.status(200).json({ success: true, data: { months }, message: "Analytics retrieved." });
+  } catch (error) {
+    next(error);
+  }
+};

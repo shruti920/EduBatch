@@ -49,7 +49,7 @@ export const markPaymentPaid = async (payment, { razorpayPaymentId, signature = 
   // Money was received, so the enrollment is paid even if an admin changed it meanwhile
   await Enrollment.updateOne(
     { _id: current.enrollment },
-    { paymentStatus: "paid", payment: current._id, amountPaid: current.amount / 100 }
+    { paymentStatus: "paid", payment: current._id, amountPaid: current.amount / 100, paidAt: current.paidAt || new Date() }
   );
 
   // Receipt email only on the call that actually flipped the payment to paid,

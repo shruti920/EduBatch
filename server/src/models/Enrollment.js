@@ -32,6 +32,9 @@ const enrollmentSchema = new mongoose.Schema(
     // (online: the Razorpay amount; offline: the batch fee when the admin marked it paid).
     // Revenue is summed from this, so editing a batch fee later never rewrites history.
     amountPaid: { type: Number, default: null, min: 0 },
+    // When the fee was received (online: Razorpay capture; offline: when the admin marked it paid).
+    // Drives month-by-month revenue in admin analytics.
+    paidAt: { type: Date, default: null },
     // Soft drop: history is kept, the seat is released
     isActive: { type: Boolean, default: true },
   },

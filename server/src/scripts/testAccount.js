@@ -348,6 +348,15 @@ const run = async () => {
     check(afterDrop === afterPay, `dropping a paid student keeps revenue (${afterDrop} vs ${afterPay})`);
     console.log("✓ Revenue = money received: unaffected by later fee edits or dropping a paid student");
 
+    const analytics = await call("GET", "/dashboard/admin/analytics?months=6", { token: adminToken });
+    check(analytics.status === 200 && analytics.json.data.months.length === 6, "analytics returns 6 months");
+    const thisMonth = analytics.json.data.months.at(-1);
+    check(thisMonth.offline >= 2000 && thisMonth.revenue >= thisMonth.offline, "this month's offline revenue includes the paid seat");
+    check(analytics.json.data.months.every((m) => /^\d{4}-\d{2}$/.test(m.month) && m.label), "month keys and labels");
+    const denied2 = await call("GET", "/dashboard/admin/analytics", { token: tLogin.json.data.token });
+    check(denied2.status === 403, `teacher can't read analytics, got ${denied2.status}`);
+    console.log("✓ Admin analytics: month-by-month revenue, enrollments, attendance; admin only");
+
     /* ---------------- Deactivation ends sessions ---------------- */
     const pLogin = await call("POST", "/auth/login", { body: { email: stuEmail, password: "PayerPass1" } });
     const deact = await call("PATCH", `/users/${payer.json.data.user._id}/status`, {
