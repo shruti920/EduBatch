@@ -4,11 +4,7 @@ import { createPaymentOrder, reportPaymentFailure, verifyPayment } from "../api/
 import { loadRazorpayCheckout } from "../utils/razorpay";
 import { errorMessage, formatINR } from "../utils/format";
 
-/**
- * Runs the whole Razorpay flow for one enrollment:
- * server order → Checkout modal → server-side signature verification.
- * The fee only shows as paid after the server confirms it.
- */
+
 export const usePayFee = ({ onPaid } = {}) => {
   const toast = useToast();
   const [payingId, setPayingId] = useState(null);

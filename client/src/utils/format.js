@@ -35,7 +35,7 @@ export const firstName = (name = "") => {
   return real || words[0] || "there";
 };
 
-// "Dr. R. K. Verma" → "RV", "Aditya Nair" → "AN"
+
 export const initials = (name = "") => {
   const words = name
     .replace(HONORIFICS, "")
@@ -48,14 +48,13 @@ export const initials = (name = "") => {
   return (first + last).toUpperCase();
 };
 
-// Local calendar date as YYYY-MM-DD (toISOString would give the UTC date)
+
 export const todayLocal = () => {
   const d = new Date();
   const offset = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - offset).toISOString().slice(0, 10);
 };
 
-// "just now", "5 minutes ago", "yesterday", "3 days ago"; older than a week → date
 export const timeAgo = (value) => {
   if (!value) return "";
   const seconds = Math.round((Date.now() - new Date(value).getTime()) / 1000);
@@ -72,8 +71,7 @@ export const timeAgo = (value) => {
 
 export const percent = (value) => (value === null || value === undefined ? "—" : `${value}%`);
 
-// Builds a real CSV (quotes escaped) and downloads it via a Blob.
-// A data: URI breaks on "#" and large files, so it isn't used here.
+
 export const downloadCsv = (filename, headers, rows) => {
   const escape = (cell) => {
     const value = cell === null || cell === undefined ? "" : String(cell);

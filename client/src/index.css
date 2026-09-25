@@ -59,7 +59,7 @@
   }
 }
 
-/* Receipt printing: only the receipt is printed, nothing else on the page */
+
 @media print {
   body * {
     visibility: hidden;
@@ -75,7 +75,7 @@
   }
 }
 
-/* Toasts slide up gently; no movement for people who prefer reduced motion */
+
 @keyframes toast-in {
   from {
     opacity: 0;

@@ -1,4 +1,4 @@
-// Mirrors the server's password rule (server/src/validations/authValidation.js)
+
 export const passwordProblem = (password = "") => {
   if (password.length < 8) return "Use at least 8 characters.";
   if (password.length > 72) return "Use at most 72 characters.";

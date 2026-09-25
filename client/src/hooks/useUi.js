@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-// Sets the browser tab title, e.g. "Batches · EduBatch"
+
 export const useDocumentTitle = (title) => {
   useEffect(() => {
     document.title = title ? `${title} · EduBatch` : "EduBatch";

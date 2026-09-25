@@ -58,7 +58,7 @@ const App = () => (
                 </PublicOnlyRoute>
               }
             />
-            {/* Not PublicOnly: the emailed link must work even if another account is signed in */}
+           
             <Route path="/reset-password/:token" element={<ResetPassword />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
 

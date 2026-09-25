@@ -36,7 +36,7 @@ const FEE_ACTIONS = {
   pending: { label: "Mark as pending", text: "The fee will show as due again." },
 };
 
-/* Fee + drop controls, shared by the desktop table and the mobile cards */
+
 const EnrollmentActions = ({ enrollment: e, onAction }) => (
   <div className="inline-flex flex-wrap items-center justify-end gap-3">
     {e.paymentStatus === "paid" && e.payment ? (
@@ -70,7 +70,7 @@ const EnrollmentActions = ({ enrollment: e, onAction }) => (
   </div>
 );
 
-/* ---------- Admin: every enrollment, with fee and drop actions ---------- */
+
 
 const AdminEnrollments = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -339,7 +339,6 @@ const AdminEnrollments = () => {
   );
 };
 
-/* ---------- Teacher: read-only rosters for their own batches ---------- */
 
 const TeacherRosters = () => {
   const [searchParams, setSearchParams] = useSearchParams();

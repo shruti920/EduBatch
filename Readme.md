@@ -6,8 +6,8 @@ Batch, enrollment, fee, attendance and notice management for small coaching inst
 
 | | |
 |---|---|
-| Frontend | _add Vercel URL_ |
-| API | _add Render URL_ |
+| Frontend | https://edu-batch-shruti.vercel.app/ |
+| API | https://edubatch-api-7b76.onrender.com/ |
 
 ## Demo accounts
 
@@ -28,16 +28,16 @@ Requires Node.js 20+ and a MongoDB connection string (a free Atlas M0 cluster wo
 ```bash
 # 1. API
 cd server
-cp .env.example .env        # fill in MONGO_URI and JWT_SECRET
+cp .env.example .env        
 npm install
-npm run seed                # demo users, batches, enrollments, attendance
-npm run dev                 # http://localhost:5000
+npm run seed                
+npm run dev                 
 
 # 2. Frontend (new terminal)
 cd client
-cp .env.example .env        # VITE_API_URL=/api/v1 (Vite proxies /api to localhost:5000)
+cp .env.example .env        
 npm install
-npm run dev                 # http://localhost:5173
+npm run dev                 
 ```
 
 `npm test` in `server/` runs all 9 API test suites (auth, role guards, batches, enrollments, dashboards, attendance, payments, notices, and account/sessions/users) and stops at the first failure. Assertions throw, so any failed check fails the run with exit code 1. Emails are never sent during tests: they go to an in-memory outbox that the account suite reads reset links from.
