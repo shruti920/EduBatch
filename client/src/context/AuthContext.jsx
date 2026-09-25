@@ -23,7 +23,16 @@ export const postLoginPath = (role, fromPath) => {
   return homePathFor(role);
 };
 
-const messageFrom = (error, fallback) => error.response?.data?.message || fallback;
+// No response at all means the API couldn't be reached — say that, not "wrong password"
+const messageFrom = (error, fallback) => {
+  if (error.response?.data?.message) return error.response.data.message;
+  if (!error.response) {
+    return error.code === "ECONNABORTED"
+      ? "The server took too long to answer. It may be waking up; try again in a moment."
+      : "Can't reach the server. Check your connection and try again.";
+  }
+  return fallback;
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);

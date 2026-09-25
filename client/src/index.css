@@ -140,19 +140,32 @@
   }
 }
 
-/* Receipt printing: only the receipt is printed, nothing else on the page */
+/* Receipt printing: the app is hidden and only the receipt copy on <body> prints, on one page */
+.print-only {
+  display: none;
+}
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4;
+    margin: 14mm;
   }
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
   }
-  .print-area {
-    position: absolute;
-    inset: 0;
-    padding: 2rem;
+  #root,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+    max-width: 170mm;
+    margin: 0 auto;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 
