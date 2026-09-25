@@ -22,26 +22,18 @@ const enrollmentSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
-    // Filled in by the payments module once a Razorpay payment is verified
     payment: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
       default: null,
     },
-    // Rupees actually received for this seat, frozen at the moment it was paid
-    // (online: the Razorpay amount; offline: the batch fee when the admin marked it paid).
-    // Revenue is summed from this, so editing a batch fee later never rewrites history.
     amountPaid: { type: Number, default: null, min: 0 },
-    // When the fee was received (online: Razorpay capture; offline: when the admin marked it paid).
-    // Drives month-by-month revenue in admin analytics.
     paidAt: { type: Date, default: null },
-    // Soft drop: history is kept, the seat is released
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
-// One enrollment record per student per batch (re-enrolling reactivates it)
 enrollmentSchema.index({ student: 1, batch: 1 }, { unique: true });
 enrollmentSchema.index({ batch: 1, isActive: 1 });
 enrollmentSchema.index({ student: 1, isActive: 1 });

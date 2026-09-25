@@ -7,14 +7,12 @@ const AuthContext = createContext(null);
 export const homePathFor = (role) =>
   role === "admin" ? "/admin" : role === "teacher" ? "/teacher" : "/student";
 
-// Pages each role may open. Used to decide where to send someone after login.
 const ROLE_PATHS = {
   admin: ["/admin", "/enrollments", "/attendance", "/payments", "/notices", "/profile"],
   teacher: ["/teacher", "/enrollments", "/attendance", "/notices", "/profile"],
   student: ["/student", "/attendance", "/payments", "/notices", "/profile"],
 };
 
-// Return to the page that asked for login — but only if this role can open it
 export const postLoginPath = (role, fromPath) => {
   const allowed = ROLE_PATHS[role] || [];
   if (fromPath && allowed.some((p) => fromPath === p || fromPath.startsWith(`${p}/`))) {
@@ -23,7 +21,6 @@ export const postLoginPath = (role, fromPath) => {
   return homePathFor(role);
 };
 
-// No response at all means the API couldn't be reached — say that, not "wrong password"
 const messageFrom = (error, fallback) => {
   if (error.response?.data?.message) return error.response.data.message;
   if (!error.response) {
@@ -36,10 +33,8 @@ const messageFrom = (error, fallback) => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  // Blocks protected routes until we know whether the refresh cookie holds a session
   const [loading, setLoading] = useState(true);
 
-  // A session starts: token in memory, user in state
   const applySession = useCallback(({ user: nextUser, token }) => {
     setAccessToken(token);
     setUser(nextUser);
@@ -51,7 +46,6 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   }, []);
 
-  // Restore the session on page load from the httpOnly refresh cookie
   useEffect(() => {
     let active = true;
     refreshSession()
@@ -63,7 +57,6 @@ export const AuthProvider = ({ children }) => {
     };
   }, [clearSession]);
 
-  // The axios interceptor fires this when a refresh fails mid-session
   useEffect(() => {
     window.addEventListener("edubatch-logout", clearSession);
     return () => window.removeEventListener("edubatch-logout", clearSession);
@@ -87,12 +80,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Revokes the refresh token on the server; the local session ends either way
   const logout = useCallback(async () => {
     try {
       await api.post("/auth/logout");
     } catch {
-      /* offline or already logged out: still clear locally */
     }
     clearSession();
   }, [clearSession]);

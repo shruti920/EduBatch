@@ -17,7 +17,6 @@ const StudentDashboard = () => {
   const { data, error, loading, reload } = useApi(getStudentDashboard, "student-dashboard");
   const { pay, payingId, labelFor } = usePayFee({ onPaid: reload });
   const notices = useApi(() => getNotices({ limit: 3 }), "dashboard-notices");
-  // Pinned notices always come back first; the dashboard shows the top 3
   const latestNotices = (notices.data?.notices || []).slice(0, 3);
   const enrollments = data?.enrollments || [];
 

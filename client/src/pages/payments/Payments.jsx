@@ -19,7 +19,6 @@ const STATUS_TABS = [
   { key: "created", label: "Not completed" },
 ];
 
-/* Shared history table. `showStudent` adds the student column for admins. */
 const PaymentAction = ({ payment: p, onReceipt, onSync, syncingId }) =>
   p.status === "paid" ? (
     <button type="button" onClick={() => onReceipt(p)} className="text-ink underline underline-offset-2">
@@ -39,7 +38,6 @@ const PaymentAction = ({ payment: p, onReceipt, onSync, syncingId }) =>
 
 const PaymentTable = ({ payments, showStudent, onReceipt, onSync, syncingId }) => (
   <>
-    {/* Phones: one card per payment */}
     <ul className="divide-y divide-paper-border md:hidden">
       {payments.map((p) => (
         <li key={p._id} className="space-y-1.5 px-4 py-3">
@@ -125,7 +123,6 @@ const useSync = (reload) => {
   return { sync, syncingId };
 };
 
-/* =================== Student =================== */
 
 const StudentPayments = () => {
   const history = useApi(() => getPaymentHistory(), "my-payments");
@@ -187,7 +184,6 @@ const StudentPayments = () => {
   );
 };
 
-/* =================== Admin =================== */
 
 const AdminPayments = () => {
   const [status, setStatus] = useState("all");

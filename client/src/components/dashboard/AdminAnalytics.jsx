@@ -4,7 +4,6 @@ import { getAdminAnalytics } from "../../api/dashboardApi";
 import { useApi } from "../../hooks/useApi";
 import { formatINR } from "../../utils/format";
 
-// ₹45k, ₹1.2L — how Indian institutes talk about fees
 const compactINR = (n) => {
   if (!n) return "₹0";
   if (n >= 1e5) return `₹${(n / 1e5).toFixed(n % 1e5 === 0 ? 0 : 1)}L`;
@@ -16,10 +15,6 @@ const W = 560;
 const H = 220;
 const PAD = { top: 26, right: 8, bottom: 30, left: 8 };
 
-/**
- * Fees received per month. Online payments are solid ink; offline ones are
- * pen-hatched. The current month is the darkest bar.
- */
 const RevenueChart = ({ months }) => {
   const hatchId = useId().replace(/:/g, "");
   const max = Math.max(...months.map((m) => m.revenue), 1);
@@ -36,7 +31,6 @@ const RevenueChart = ({ months }) => {
           <line x1="0" y1="0" x2="0" y2="6" stroke="var(--color-ink)" strokeWidth="2" />
         </pattern>
       </defs>
-      {/* Notebook rules as gridlines */}
       {[0, 0.25, 0.5, 0.75, 1].map((t) => (
         <line
           key={t}
@@ -92,7 +86,6 @@ const RevenueChart = ({ months }) => {
   );
 };
 
-/** Attendance rate per month against the 75% line most institutes require. */
 const AttendanceChart = ({ months }) => {
   const w = 300;
   const h = 220;
@@ -102,7 +95,6 @@ const AttendanceChart = ({ months }) => {
   const x = (i) => pad.left + (months.length === 1 ? innerW / 2 : (innerW * i) / (months.length - 1));
   const y = (v) => pad.top + innerH - (v / 100) * innerH;
 
-  // Break the line where a month had no attendance marked
   const segments = [];
   let current = [];
   months.forEach((m, i) => {
@@ -168,7 +160,6 @@ const AttendanceChart = ({ months }) => {
   );
 };
 
-// "₹45,000 received in September, ₹12,000 more than August."
 const comparison = (months) => {
   const now = months.at(-1);
   const prev = months.at(-2);
@@ -235,7 +226,6 @@ const AdminAnalytics = () => {
             </figure>
           </div>
 
-          {/* Same numbers for screen readers */}
           <table className="sr-only">
             <caption>Monthly fees, enrollments and attendance</caption>
             <thead>

@@ -4,18 +4,10 @@ import { createPaymentOrder, reportPaymentFailure, verifyPayment } from "../api/
 import { loadRazorpayCheckout } from "../utils/razorpay";
 import { errorMessage, formatINR } from "../utils/format";
 
-/**
- * Runs the whole Razorpay flow for one enrollment:
- * server order → Checkout modal → server-side signature verification.
- * The fee only shows as paid after the server confirms it.
- */
 export const usePayFee = ({ onPaid } = {}) => {
   const toast = useToast();
-  // Which fee is in progress, and whether its Checkout is still loading or already open.
-  // Only that fee's button changes; the others stay normal.
   const [payingId, setPayingId] = useState(null);
-  const [phase, setPhase] = useState(null); // "opening" | "open" | null
-  // Synchronous lock: a double tap, or a tap on another fee, can't start a second checkout
+  const [phase, setPhase] = useState(null);
   const busy = useRef(false);
 
   const pay = async (enrollment) => {
@@ -61,8 +53,6 @@ export const usePayFee = ({ onPaid } = {}) => {
       theme: { color: "#1F3494" },
       retry: { enabled: true },
       modal: {
-        // Off on purpose: Razorpay's close-confirmation can show as a native browser
-        // dialog ("localhost says"). Closing is harmless — the order is reused next time.
         confirm_close: false,
         ondismiss: () => {
           if (settled) return;
@@ -77,8 +67,6 @@ export const usePayFee = ({ onPaid } = {}) => {
           finish({ tone: "success", text: `Payment of ${formatINR(order.amount / 100)} received for ${order.batchName}.` });
           onPaid?.();
         } catch (err) {
-          // The server message already covers rejected signatures; add the recovery
-          // hint for everything else (e.g. the connection dropped after paying)
           const message = errorMessage(err);
           finish({
             tone: "error",
@@ -91,7 +79,6 @@ export const usePayFee = ({ onPaid } = {}) => {
       },
     });
 
-    // Fires for each failed attempt; Checkout stays open so the student can retry
     checkout.on("payment.failed", (resp) => {
       reportPaymentFailure({
         razorpay_order_id: order.orderId,
@@ -104,7 +91,6 @@ export const usePayFee = ({ onPaid } = {}) => {
     setPhase("open");
   };
 
-  /** Label for one fee's button */
   const labelFor = (id, idle) => (id !== payingId ? idle : phase === "opening" ? "Opening…" : "Paying…");
 
   return { pay, payingId, labelFor };

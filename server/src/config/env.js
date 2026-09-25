@@ -1,7 +1,4 @@
-/**
- * Startup checks. The API refuses to boot with a configuration that would be
- * insecure or silently broken in production (e.g. CORS falling back to localhost).
- */
+
 const isProd = () => process.env.NODE_ENV === "production";
 
 const ALWAYS_REQUIRED = ["MONGO_URI", "JWT_SECRET"];

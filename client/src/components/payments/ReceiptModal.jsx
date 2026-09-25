@@ -35,11 +35,6 @@ const ReceiptBody = ({ payment }) => (
   </div>
 );
 
-/**
- * Fee receipt. Printing uses a separate copy mounted directly on <body>: the print
- * stylesheet hides the whole app (#root) and shows only that copy, so the receipt is
- * always exactly one page — no blank or duplicated pages from the page behind the modal.
- */
 const ReceiptModal = ({ payment, onClose }) => (
   <>
     <Modal

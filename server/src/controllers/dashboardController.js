@@ -5,11 +5,6 @@ import Attendance from "../models/Attendance.js";
 import { todayKey } from "../utils/date.js";
 import { upcomingClasses } from "../utils/schedule.js";
 
-/**
- * Revenue = money actually received, frozen per enrollment in `amountPaid`.
- * Includes students who paid and were later dropped (the money was still received).
- * Older records without amountPaid fall back to the Razorpay amount, then the batch fee.
- */
 const revenueSummary = async () => {
   const paid = await Enrollment.find({ paymentStatus: "paid" })
     .select("amountPaid payment batch")
@@ -30,7 +25,6 @@ const revenueSummary = async () => {
 
 const ATTENDED = ["present", "late"];
 
-// Returns { [batchId]: activeSeatCount }
 const seatMapFor = async (batchIds) => {
   const rows = await Enrollment.aggregate([
     { $match: { batch: { $in: batchIds }, isActive: true } },
@@ -49,10 +43,8 @@ const withSeats = (batch, seatMap) => {
   };
 };
 
-// null when there is nothing to measure — the UI shows "—" instead of a fake 100%
 const rate = (part, total) => (total > 0 ? Math.round((part / total) * 1000) / 10 : null);
 
-// GET /dashboard/admin
 export const getAdminDashboard = async (req, res, next) => {
   try {
     const today = todayKey();
@@ -74,7 +66,6 @@ export const getAdminDashboard = async (req, res, next) => {
     const batchRows = batches.map((b) => withSeats(b, seatMap));
     const activeBatches = batchRows.filter((b) => b.status === "active");
 
-    // Collected = money received (frozen amounts). Pending = what active seats still owe at today's fee.
     const fees = {
       collected: revenue.collected,
       collectedOnline: revenue.online,
@@ -117,7 +108,6 @@ export const getAdminDashboard = async (req, res, next) => {
           pendingToday: activeBatches.filter((b) => !markedToday.has(b._id.toString())).length,
         },
         batches: batchRows,
-        // Admin sees the whole institute's classes for today
         upcomingClasses: upcomingClasses(batches, { days: 1, limit: 12 }),
       },
       message: "Admin dashboard retrieved.",
@@ -127,7 +117,6 @@ export const getAdminDashboard = async (req, res, next) => {
   }
 };
 
-// GET /dashboard/teacher
 export const getTeacherDashboard = async (req, res, next) => {
   try {
     const batches = await Batch.find({
@@ -166,7 +155,6 @@ export const getTeacherDashboard = async (req, res, next) => {
   }
 };
 
-// GET /dashboard/student
 export const getStudentDashboard = async (req, res, next) => {
   try {
     const studentId = req.user._id.toString();
@@ -185,7 +173,6 @@ export const getStudentDashboard = async (req, res, next) => {
       "records.student": req.user._id,
     }).select("batch records");
 
-    // Per-batch attendance so each enrolled batch card can show its own rate
     const perBatch = {};
     let total = 0;
     let attended = 0;
@@ -235,11 +222,8 @@ export const getStudentDashboard = async (req, res, next) => {
   }
 };
 
-/* ---------------- Admin analytics ---------------- */
-
 const tz = () => process.env.APP_TIMEZONE || "Asia/Kolkata";
 
-// "YYYY-MM" of a moment in the institute's timezone
 const monthKeyOf = (date) => {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", { timeZone: tz(), year: "numeric", month: "2-digit" })
@@ -249,7 +233,6 @@ const monthKeyOf = (date) => {
   return `${parts.year}-${parts.month}`;
 };
 
-// The last `count` month keys, oldest first, ending with the current month
 const recentMonths = (count, now = new Date()) => {
   const [y, m] = monthKeyOf(now).split("-").map(Number);
   return Array.from({ length: count }, (_, i) => {
@@ -261,17 +244,11 @@ const recentMonths = (count, now = new Date()) => {
 const monthLabel = (key) =>
   new Date(`${key}-15T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
 
-/**
- * GET /dashboard/admin/analytics?months=6 (admin)
- * Month by month: fees received (online/offline), new enrollments and the
- * attendance rate across all classes marked that month.
- */
 export const getAdminAnalytics = async (req, res, next) => {
   try {
     const count = Math.min(12, Math.max(3, Number.parseInt(req.query.months, 10) || 6));
     const keys = recentMonths(count);
     const first = new Date(`${keys[0]}-01T00:00:00Z`);
-    // A day of margin so the timezone offset never drops the first day
     const since = new Date(first.getTime() - 24 * 60 * 60 * 1000);
 
     const [paid, enrolled, attendance] = await Promise.all([
@@ -308,7 +285,6 @@ export const getAdminAnalytics = async (req, res, next) => {
       if (row) row.enrollments += 1;
     });
 
-    // Attendance dates are stored as the local calendar day at 00:00 UTC
     attendance.forEach((a) => {
       const row = rows[a.date.toISOString().slice(0, 7)];
       if (!row) return;
