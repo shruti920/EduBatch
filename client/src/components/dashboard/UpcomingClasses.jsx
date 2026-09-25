@@ -41,7 +41,7 @@ const UpcomingClasses = ({ sessions = [], title = "Upcoming classes", emptyText,
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium text-ink">{s.batch.name}</p>
               <p className="truncate text-ink-muted">
-                {[s.batch.subject, s.batch.venue, showTeacher && s.batch.teacher?.name].filter(Boolean).join(" · ")}
+                {[s.batch.subject, s.batch.venue, showTeacher && s.batch.teacher?.name].filter(Boolean).join(", ")}
               </p>
             </div>
             <StatePill session={s} />

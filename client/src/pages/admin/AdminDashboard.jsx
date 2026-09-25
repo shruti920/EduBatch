@@ -56,7 +56,7 @@ const AdminDashboard = () => {
         <>
           <StatStrip
             items={[
-              { label: "Students", value: counts.students, note: `${counts.teachers} teachers` },
+              { label: "Students", value: counts.students, note: `${counts.teachers} ${counts.teachers === 1 ? "teacher" : "teachers"}` },
               {
                 label: "Active batches",
                 value: counts.activeBatches,
@@ -65,7 +65,7 @@ const AdminDashboard = () => {
               {
                 label: "Fees collected",
                 value: formatINR(fees.collected),
-                note: `${formatINR(fees.collectedOnline)} online · ${formatINR(fees.collectedOffline)} offline`,
+                note: `${formatINR(fees.collectedOnline)} online, ${formatINR(fees.collectedOffline)} offline`,
               },
               {
                 label: "Fees pending",
@@ -173,7 +173,7 @@ const AdminDashboard = () => {
                   <p className="mt-0.5 text-ink-muted">
                     {fees.pendingCount === 0
                       ? "No pending fees."
-                      : `${fees.pendingCount} enrollments, ${formatINR(fees.pending)} due.`}
+                      : `${fees.pendingCount} ${fees.pendingCount === 1 ? "enrollment" : "enrollments"}, ${formatINR(fees.pending)} due.`}
                   </p>
                   {fees.pendingCount > 0 && (
                     <Link

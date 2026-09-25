@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { errorMessage } from "../utils/format";
 
-
+/**
+ * Runs `fetcher` whenever `key` changes (or reload() is called).
+ * Previous data stays visible while a refetch is in flight, so tables don't flash.
+ */
 export const useApi = (fetcher, key = "") => {
   const [nonce, setNonce] = useState(0);
   const requestKey = `${key}|${nonce}`;
@@ -15,7 +18,8 @@ export const useApi = (fetcher, key = "") => {
     return () => {
       active = false;
     };
-  
+    // `fetcher` is recreated every render; `requestKey` is what decides a refetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey]);
 
   return {

@@ -34,7 +34,7 @@ const BatchRegistry = () => {
   const [subject, setSubject] = useState("all");
   const debouncedSearch = useDebouncedValue(search.trim());
 
-
+  // Opened from the dashboard's "New batch" button via ?new=1
   const [modal, setModal] = useState(() => (searchParams.get("new") ? { batch: null } : null));
   const [confirm, setConfirm] = useState(null); // { batch, nextStatus }
   const [busy, setBusy] = useState(false);

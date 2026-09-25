@@ -1,7 +1,7 @@
 const CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 let loader = null;
 
-
+// Loads Razorpay Checkout once, on first use (keeps it off every other page load)
 export const loadRazorpayCheckout = () => {
   if (window.Razorpay) return Promise.resolve(window.Razorpay);
   if (!loader) {

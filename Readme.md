@@ -2,7 +2,7 @@
 
 Batch, enrollment, fee, attendance and notice management for small coaching institutes. Admins create batches and enroll students, teachers mark attendance and post notices for their own batches, and students pay fees online, track attendance and read announcements.
 
-**Stack:** React 18 + Vite + Tailwind CSS v4 · Node.js + Express 5 · MongoDB + Mongoose · JWT (access + rotating refresh) + bcrypt · Zod · Razorpay (test mode) · Nodemailer (SMTP)
+**Stack:** React 18 + Vite + Tailwind CSS v4 · Node.js + Express 5 · MongoDB + Mongoose · JWT (access + rotating refresh) + bcrypt · Zod · Razorpay (test mode) · Nodemailer (SMTP) · Motion, Sonner, react-easy-crop (UI)
 
 | | |
 |---|---|
@@ -23,21 +23,21 @@ The three demo accounts are listed in `DEMO_PROTECTED_EMAILS` on the deployed AP
 
 ## Run locally
 
-Requires Node.js 20+ and a MongoDB connection string (a free Atlas M0 cluster works).
+Requires Node.js 22.13+ on the 22.x line and a MongoDB connection string (a free Atlas M0 cluster works).
 
 ```bash
 # 1. API
 cd server
-cp .env.example .env        
+cp .env.example .env        # fill in MONGO_URI and JWT_SECRET
 npm install
-npm run seed                
-npm run dev                 
+npm run seed                # demo users, batches, enrollments, attendance
+npm run dev                 # http://localhost:5000
 
 # 2. Frontend (new terminal)
 cd client
-cp .env.example .env        
+cp .env.example .env        # VITE_API_URL=/api/v1 (Vite proxies /api to localhost:5000)
 npm install
-npm run dev                 
+npm run dev                 # http://localhost:5173
 ```
 
 `npm test` in `server/` runs all 9 API test suites (auth, role guards, batches, enrollments, dashboards, attendance, payments, notices, and account/sessions/users) and stops at the first failure. Assertions throw, so any failed check fails the run with exit code 1. Emails are never sent during tests: they go to an in-memory outbox that the account suite reads reset links from.
@@ -107,7 +107,10 @@ Base URL: `/api/v1`. Protected routes need `Authorization: Bearer <token>`. Ever
 | POST | `/auth/forgot-password` | Public | Same response whether or not the email exists. 5 / 15 min per IP |
 | POST | `/auth/reset-password` | Public | `{ token, password }`. Single use, 15-min expiry, ends all sessions |
 | GET | `/auth/me` | Any role | Current user |
-| PATCH | `/auth/me` | Any role | `name`, `phone`, `avatar` (https URL) only |
+| PATCH | `/auth/me` | Any role | `name`, `phone` only |
+| PUT | `/auth/me/avatar` | Any role | Raw image bytes (JPG/PNG/WebP, max 300 KB; type checked from the bytes). The client crops to 256×256 WebP first |
+| DELETE | `/auth/me/avatar` | Any role | Remove the photo |
+| GET | `/avatars/:userId/:key.webp` | Public (unguessable key) | Serves the photo, cached immutably; the key changes on each upload |
 | PATCH | `/auth/change-password` | Any role | Needs current password. Other devices signed out, this one gets a fresh session |
 | GET | `/users` | Admin | `role`, `status`, `search`, `page` filters + per-role counts |
 | POST | `/users` | Admin | Create a **teacher or student** (not admin). Welcome email, never the password |
@@ -185,6 +188,10 @@ Admin/student ── Check status ─▶ API: /sync      (asks Razorpay directly
 - **Unread badge:** each user has a `noticesSeenAt` time. Notices you can see that were posted after it (and not by you) are unread; opening Notices clears the badge. One date per user instead of a growing "read by" list on every notice.
 - Pinned notices always stay at the top; the rest page 20 at a time ("Load older notices").
 
+## Design
+
+The UI is built around the ruled exercise notebook: blue pen ink, a red margin line, ruled paper and a highlighter. See [docs/BRAND_UI.md](docs/BRAND_UI.md) for the tokens, logo and what changed.
+
 ## Design decisions
 
 - **One `users` collection with a `role` field.** Role changes don't move documents, and every role check happens on the server — the client's idea of the role is never trusted.
@@ -225,9 +232,9 @@ RAZORPAY_KEY_ID=rzp_test_...  RAZORPAY_KEY_SECRET=...  RAZORPAY_WEBHOOK_SECRET=.
 SMTP_HOST=smtp-relay.brevo.com SMTP_PORT=2525 SMTP_USER=... SMTP_PASS=... EMAIL_FROM=...
 ```
 
-Then open the Render Shell and run `npm run seed` once.
+Then seed the live database once from your machine (Render's free tier has no shell): in `server/`, set `MONGO_URI` to the same value as on Render and run `npm run seed`. In PowerShell: `$env:MONGO_URI="<uri>"; npm run seed`.
 
-**4. Frontend on Vercel** — Import the repo, root directory `client`, framework Vite. Before deploying, edit `client/vercel.json` and replace `YOUR-RENDER-SERVICE.onrender.com` with your Render host. Environment: `VITE_API_URL=/api/v1`. The rewrite serves the API from the Vercel domain, which keeps the refresh cookie first-party.
+**4. Frontend on Vercel** — Import the repo, root directory `client`, framework Vite. The checked-in `client/vercel.json` rewrite points to `https://edubatch-api-7b76.onrender.com`; update it only if the Render service URL changes. Environment: `VITE_API_URL=/api/v1`. The rewrite serves the API from the Vercel domain, which keeps the refresh cookie first-party.
 
 **5. Razorpay webhook (optional)** — URL `https://<render-host>/api/v1/payments/webhook` (direct to Render, not via Vercel), events `payment.captured`, `payment.failed`, `order.paid`.
 
@@ -237,7 +244,7 @@ Then open the Render Shell and run `npm run seed` once.
 
 - One institute per deployment (no multi-tenancy); all times are in `APP_TIMEZONE` (IST by default).
 - Admins are created by the seed script only; the app creates teachers and students. An admin sets a new user's first password and shares it; the user changes it from Profile.
-- Avatars are image URLs (https) rather than uploads — the spec lists avatar as a URL field.
+- Avatars are uploaded, cropped in the browser and stored in MongoDB (small WebP files), so no extra storage service is needed.
 - Receipts: printable/save-as-PDF page in the app plus an emailed receipt. No server-generated PDF file.
 - "Upcoming classes" are expanded from each batch's weekly schedule within its start/end dates; there's no per-session calendar or holiday list.
 - Deactivating a student keeps their seats and history; the admin drops seats explicitly from Enrollments.
@@ -250,6 +257,6 @@ Then open the Render Shell and run `npm run seed` once.
 | Email on Render free tier | Render's free tier blocks SMTP ports 25/465/587, so production uses Brevo SMTP on port 2525. If no SMTP is configured, emails are logged, not sent. |
 | Server-generated PDF receipts | Receipts are printable pages + email; no PDF file is generated server-side. |
 | Notice delivery by email / WhatsApp, live push | In-app only (badge + feed). Phase 2 in the spec's roadmap. |
-| Attachments on notices, avatar uploads | Not built; URLs only. |
+| Attachments on notices | Not built. |
 | Editing a user's role or email | Not built; create a new account instead. |
 | Session list per device | "Sign out of all devices" exists; there is no per-device session list. |
