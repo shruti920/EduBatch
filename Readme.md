@@ -190,7 +190,7 @@ Admin/student ── Check status ─▶ API: /sync      (asks Razorpay directly
 
 ## Design
 
-The UI is built around the ruled exercise notebook: blue pen ink, a red margin line, ruled paper and a highlighter. See [docs/BRAND_UI.md](docs/BRAND_UI.md) for the tokens, logo and what changed.
+The UI is built around the ruled exercise notebook: blue pen ink, a red margin line, ruled paper and a highlighter. 
 
 ## Design decisions
 
