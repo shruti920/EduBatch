@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 
-// Razorpay can deliver the same webhook more than once. Each x-razorpay-event-id
-// is stored once; a duplicate insert tells us the event was already handled.
+
 const webhookEventSchema = new mongoose.Schema({
   eventId: { type: String, required: true, unique: true },
   event: { type: String, required: true },

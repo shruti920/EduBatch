@@ -5,10 +5,9 @@ import AppError from "../utils/AppError.js";
 import { signAccessToken } from "../utils/jwt.js";
 
 export const REFRESH_COOKIE = "eb_rt";
-// Scoped to the auth routes only: the refresh cookie is never sent to any other endpoint
+
 const COOKIE_PATH = "/api/v1/auth";
-// Two tabs refreshing at the same instant both present the same cookie. The second
-// one inside this window is treated as a race, not an attack.
+
 const REUSE_GRACE_MS = 30 * 1000;
 
 const refreshTtlMs = () => Number(process.env.REFRESH_TOKEN_TTL_DAYS || 7) * 24 * 60 * 60 * 1000;
@@ -17,8 +16,7 @@ export const sha256 = (value) => crypto.createHash("sha256").update(value).diges
 
 const cookieOptions = () => {
   const isProd = process.env.NODE_ENV === "production";
-  // "lax" works when the frontend and API share a site (Vercel rewrite, or localhost).
-  // Set COOKIE_SAMESITE=none only if the browser calls the API cross-site directly.
+ 
   const sameSite = (process.env.COOKIE_SAMESITE || "lax").toLowerCase();
   return {
     httpOnly: true,
@@ -90,8 +88,6 @@ export const rotateSession = async (res, rawToken, req) => {
   }
 
   if (!stored.revokedAt) {
-    // Conditional update: if a parallel request already rotated this token a moment
-    // ago, this is a no-op and we fall into the same grace-window path as above.
     await RefreshToken.updateOne(
       { _id: stored._id, revokedAt: null },
       { revokedAt: new Date(), revokedReason: "rotated" }
@@ -103,7 +99,7 @@ export const rotateSession = async (res, rawToken, req) => {
   return { user, accessToken: signAccessToken(user) };
 };
 
-/** Logout on this device: revoke the presented refresh token (if any). */
+
 export const revokeByRawToken = async (rawToken) => {
   if (!rawToken) return;
   await RefreshToken.updateOne(
@@ -112,10 +108,7 @@ export const revokeByRawToken = async (rawToken) => {
   );
 };
 
-/**
- * Ends every session of a user: all refresh tokens revoked and, by bumping
- * tokenVersion, every access token already handed out stops working immediately.
- */
+
 export const revokeAllSessions = async (userId, reason) => {
   await Promise.all([
     RefreshToken.updateMany({ user: userId, revokedAt: null }, { revokedAt: new Date(), revokedReason: reason }),

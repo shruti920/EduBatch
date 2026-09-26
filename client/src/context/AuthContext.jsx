@@ -84,6 +84,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await api.post("/auth/logout");
     } catch {
+      // Offline or already logged out: the local session is cleared either way
     }
     clearSession();
   }, [clearSession]);

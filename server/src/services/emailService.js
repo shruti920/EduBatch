@@ -1,19 +1,7 @@
 import nodemailer from "nodemailer";
 import { appUrl } from "../config/env.js";
 
-/**
- * Transactional email over SMTP (Nodemailer).
- *
- * - SMTP_HOST set          → real delivery (Gmail locally, Brevo/Mailtrap/etc. in production)
- * - SMTP_HOST missing, or
- *   EMAIL_TRANSPORT=log    → nothing is sent; the email is printed to the server log and kept
- *                            in an in-memory outbox (the test suites read reset links from it)
- *
- * Render's free tier blocks outbound ports 25/465/587, so in production use a provider
- * that accepts SMTP on port 2525 (e.g. Brevo: smtp-relay.brevo.com:2525). See README.
- *
- * Sending never throws into the caller: a mail outage must not fail a payment or a signup.
- */
+
 
 let transporter = null;
 const outbox = [];
@@ -64,9 +52,7 @@ const button = (href, label) =>
 const row = (label, value) =>
   `<tr><td style="padding:6px 0;color:#6b7280;font-size:14px">${escapeHtml(label)}</td><td style="padding:6px 0;text-align:right;font-size:14px;font-weight:bold">${escapeHtml(value)}</td></tr>`;
 
-/**
- * Low-level send. Returns { delivered, transport } and never throws.
- */
+
 export const sendEmail = async ({ to, subject, html, text }) => {
   const message = { from: fromAddress(), to, subject, html, text };
 
