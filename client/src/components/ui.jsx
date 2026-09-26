@@ -46,11 +46,11 @@ export const StatStrip = ({ items }) => (
         key={item.label}
         className="relative overflow-hidden rounded-[var(--radius-card)] border border-paper-border bg-white shadow-[var(--shadow-sheet)]"
       >
-        <dt className="px-4 pt-3 pb-2 text-sm text-ink-muted">{item.label}</dt>
+        <dt className="px-4 pt-2.5 pb-2 text-sm text-ink-muted sm:pt-3">{item.label}</dt>
         <div className="border-t border-margin/70" aria-hidden="true" />
         <dd className="flex items-center justify-between gap-3 px-4 pt-2">
           <span
-            className={`text-[1.75rem] leading-tight font-semibold tracking-tight tabular-nums ${
+            className={`text-2xl leading-tight font-semibold tracking-tight tabular-nums sm:text-[1.75rem] ${
               VALUE_TONES[item.tone] || "text-ink"
             }`}
           >
@@ -58,7 +58,8 @@ export const StatStrip = ({ items }) => (
           </span>
           {item.visual}
         </dd>
-        <p className="min-h-[1.75rem] px-4 pt-0.5 pb-3 text-xs text-ink-muted">{item.note || ""}</p>
+        {/* Equal heights side by side on desktop; no empty space when stacked on phones */}
+        <p className="px-4 pt-0.5 pb-3 text-xs text-ink-muted empty:pb-2 sm:min-h-[1.75rem]">{item.note || ""}</p>
       </div>
     ))}
   </dl>
