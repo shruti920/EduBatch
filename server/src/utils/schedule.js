@@ -4,10 +4,7 @@ const APP_TIMEZONE = () => process.env.APP_TIMEZONE || "Asia/Kolkata";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/**
- * Current date and minute-of-day in the institute's timezone.
- * Returns { todayKey: Date at 00:00Z of the local date, minutes: 0..1439 }.
- */
+
 export const localNow = (now = new Date()) => {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
