@@ -7,6 +7,16 @@ const dayLabel = (isoDate) => {
   return date.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
 };
 
+// "4:00–6:00 PM" when both times share AM/PM, otherwise "11:00 AM–1:00 PM"
+const timeRange = (start, end) => {
+  if (!start) return "Time not set";
+  const a = formatTime(start);
+  if (!end) return a;
+  const b = formatTime(end);
+  const suffix = a.slice(-3);
+  return /\s[AP]M$/i.test(a) && b.endsWith(suffix) ? `${a.slice(0, -3)}–${b}` : `${a}–${b}`;
+};
+
 const StatePill = ({ session }) => {
   if (session.state === "live") return <Pill tone="success">In progress</Pill>;
   if (session.isFirstClass) return <Pill tone="marigold">First class</Pill>;
@@ -31,20 +41,24 @@ const UpcomingClasses = ({ sessions = [], title = "Upcoming classes", emptyText,
     ) : (
       <ul className="divide-y divide-paper-border">
         {sessions.map((s) => (
-          <li key={`${s.batch._id}-${s.date}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
-            <div className="w-28 shrink-0">
+          <li
+            key={`${s.batch._id}-${s.date}`}
+            className="flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center sm:gap-4"
+          >
+            {/* Phones: date and time on one line above the batch. Wider screens: a time column */}
+            <div className="flex items-baseline gap-2 sm:w-36 sm:shrink-0 sm:flex-col sm:gap-0">
               <p className="font-medium text-ink">{dayLabel(s.date)}</p>
-              <p className="text-ink-muted tabular-nums">
-                {s.startTime ? `${formatTime(s.startTime)}${s.endTime ? `–${formatTime(s.endTime)}` : ""}` : "Time not set"}
-              </p>
+              <p className="text-ink-muted tabular-nums">{timeRange(s.startTime, s.endTime)}</p>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate font-medium text-ink">{s.batch.name}</p>
-              <p className="truncate text-ink-muted">
+              <p className="font-medium text-ink sm:truncate">{s.batch.name}</p>
+              <p className="text-ink-muted sm:truncate">
                 {[s.batch.subject, s.batch.venue, showTeacher && s.batch.teacher?.name].filter(Boolean).join(", ")}
               </p>
             </div>
-            <StatePill session={s} />
+            <div className="sm:shrink-0">
+              <StatePill session={s} />
+            </div>
           </li>
         ))}
       </ul>

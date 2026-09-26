@@ -3,6 +3,7 @@ import DashboardLayout from "../../components/layout/DashboardLayout";
 import BatchCard from "../../components/batches/BatchCard";
 import UpcomingClasses from "../../components/dashboard/UpcomingClasses";
 import AttendanceRing from "../../components/dashboard/AttendanceRing";
+import { attendanceNote } from "../../utils/attendance";
 import { getStudentDashboard } from "../../api/dashboardApi";
 import { useAuth } from "../../context/AuthContext";
 import { useApi } from "../../hooks/useApi";
@@ -10,7 +11,22 @@ import { usePayFee } from "../../hooks/usePayFee";
 import NoticeCard from "../../components/notices/NoticeCard";
 import { getNotices } from "../../api/noticeApi";
 import { Button, EmptyState, Loading, Notice, PageHeader, PaymentPill, Section, StatStrip } from "../../components/ui";
-import { firstName, formatDate, formatINR, percent } from "../../utils/format";
+import { firstName, formatDate, formatINR, formatTime, percent } from "../../utils/format";
+
+// "today, 4:00 PM" / "Mon 28 Sept, 4:00 PM"
+const nextClassLabel = (session) => {
+  const day =
+    session.state === "live"
+      ? "in progress"
+      : session.state === "today"
+        ? "today"
+        : new Date(`${session.date}T00:00:00`).toLocaleDateString("en-IN", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+          });
+  return session.startTime && session.state !== "live" ? `${day}, ${formatTime(session.startTime)}` : day;
+};
 
 const StudentDashboard = () => {
   const { user } = useAuth();
@@ -35,13 +51,19 @@ const StudentDashboard = () => {
         <>
           <StatStrip
             items={[
-              { label: "Enrolled batches", value: data.totalEnrolled },
+              {
+                label: "Enrolled batches",
+                value: data.totalEnrolled,
+                note: data.upcomingClasses?.[0]
+                  ? `Next class ${nextClassLabel(data.upcomingClasses[0])}`
+                  : data.totalEnrolled
+                    ? "No classes in the next 7 days"
+                    : "",
+              },
               {
                 label: "Attendance",
                 value: percent(data.attendance.rate),
-                note: data.attendance.total
-                  ? `${data.attendance.attended} of ${data.attendance.total} classes`
-                  : "No classes recorded yet",
+                note: attendanceNote(data.attendance.attended, data.attendance.total),
                 tone: data.attendance.rate !== null && data.attendance.rate < 75 ? "attention" : undefined,
                 visual: <AttendanceRing rate={data.attendance.total ? data.attendance.rate : null} />,
               },
